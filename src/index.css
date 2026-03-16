@@ -1,0 +1,165 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 30% 97%;
+    --foreground: 30 20% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 30 20% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 20% 12%;
+
+    --primary: 152 55% 38%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 20% 93%;
+    --secondary-foreground: 30 20% 20%;
+
+    --muted: 40 15% 95%;
+    --muted-foreground: 30 10% 45%;
+
+    --accent: 152 40% 93%;
+    --accent-foreground: 152 55% 28%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 15% 88%;
+    --input: 40 15% 88%;
+    --ring: 152 55% 38%;
+
+    --radius: 1rem;
+
+    --sidebar-background: 30 25% 12%;
+    --sidebar-foreground: 40 10% 85%;
+    --sidebar-primary: 45 90% 55%;
+    --sidebar-primary-foreground: 30 25% 12%;
+    --sidebar-accent: 30 20% 18%;
+    --sidebar-accent-foreground: 40 10% 92%;
+    --sidebar-border: 30 20% 20%;
+    --sidebar-ring: 45 90% 55%;
+
+    --chat-bubble-self: 152 40% 93%;
+    --chat-bubble-other: 40 15% 95%;
+    --success: 152 55% 38%;
+    --warning: 38 92% 50%;
+    --info: 210 100% 50%;
+    --gold: 45 90% 55%;
+
+    font-family: 'Plus Jakarta Sans', sans-serif;
+  }
+
+  .dark {
+    --background: 30 20% 7%;
+    --foreground: 40 10% 92%;
+    --card: 30 20% 10%;
+    --card-foreground: 40 10% 92%;
+    --popover: 30 20% 10%;
+    --popover-foreground: 40 10% 92%;
+    --primary: 152 55% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 15% 16%;
+    --secondary-foreground: 40 10% 90%;
+    --muted: 30 15% 14%;
+    --muted-foreground: 40 10% 55%;
+    --accent: 152 35% 14%;
+    --accent-foreground: 152 45% 75%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 30 15% 18%;
+    --input: 30 15% 18%;
+    --ring: 152 55% 45%;
+    --sidebar-background: 30 25% 5%;
+    --sidebar-foreground: 40 10% 85%;
+    --sidebar-primary: 45 90% 55%;
+    --sidebar-primary-foreground: 30 25% 8%;
+    --sidebar-accent: 30 20% 12%;
+    --sidebar-accent-foreground: 40 10% 90%;
+    --sidebar-border: 30 20% 12%;
+    --sidebar-ring: 45 90% 55%;
+    --chat-bubble-self: 152 35% 14%;
+    --chat-bubble-other: 30 15% 14%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-size: 16px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: none;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+}
+
+@layer utilities {
+  .chat-bubble-self {
+    background-color: hsl(var(--chat-bubble-self));
+  }
+  .chat-bubble-other {
+    background-color: hsl(var(--chat-bubble-other));
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .h-screen-safe {
+    height: 100dvh;
+  }
+
+  /* Voice recording pulsing dot */
+  .voice-recording-dot {
+    @apply h-2.5 w-2.5 rounded-full bg-destructive shrink-0;
+    animation: pulse-dot 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  /* Voice waveform bars */
+  .voice-waveform-bar {
+    @apply w-[3px] rounded-full bg-destructive/50;
+    animation: waveform-bounce 0.6s ease-in-out infinite alternate;
+  }
+
+  @keyframes waveform-bounce {
+    0% { transform: scaleY(0.4); }
+    100% { transform: scaleY(1); }
+  }
+
+  /* Image lightbox overlay */
+  .lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    animation: lightbox-in 0.2s ease-out;
+  }
+
+  @keyframes lightbox-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
