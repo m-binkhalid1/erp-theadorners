@@ -229,6 +229,7 @@ export type Database = {
           created_at: string
           event_id: string | null
           id: string
+          invoice_no: string | null
           items: Json
           paid: number
           status: string
@@ -240,6 +241,7 @@ export type Database = {
           created_at?: string
           event_id?: string | null
           id?: string
+          invoice_no?: string | null
           items?: Json
           paid?: number
           status?: string
@@ -251,6 +253,7 @@ export type Database = {
           created_at?: string
           event_id?: string | null
           id?: string
+          invoice_no?: string | null
           items?: Json
           paid?: number
           status?: string

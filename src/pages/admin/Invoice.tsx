@@ -32,8 +32,8 @@ interface InvoiceRow {
   event_id: string | null;
   items: InvoiceLineItem[];
   total: number;
-  paid: number;
   status: string;
+  invoice_no: string;
   created_at: string;
 }
 
@@ -53,7 +53,6 @@ const AdminInvoice = () => {
   // Form state
   const [form, setForm] = useState<{
     event_id: string;
-    invoice_no: string;
     invoice_date: string;
     due_date: string;
     for_label: string;
@@ -68,7 +67,6 @@ const AdminInvoice = () => {
     terms: string;
   }>({
     event_id: "",
-    invoice_no: "",
     invoice_date: new Date().toISOString().split("T")[0],
     due_date: "",
     for_label: "Balloon Decoration",
@@ -129,8 +127,8 @@ const AdminInvoice = () => {
   const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, emptyLine()] }));
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
 
-  const buildInvoiceData = (): InvoiceData => ({
-    invoice_no: form.invoice_no,
+  const buildInvoiceData = (existingInvoiceNo?: string): InvoiceData => ({
+    invoice_no: existingInvoiceNo || "Draft",
     invoice_date: form.invoice_date ? new Date(form.invoice_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "",
     due_date: form.due_date ? new Date(form.due_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "",
     for_label: form.for_label,
@@ -149,7 +147,7 @@ const AdminInvoice = () => {
   const total = subtotal - form.discount + subtotal * (form.tax_percent / 100);
 
   const handleSave = async () => {
-    if (!form.company || !form.invoice_no) { toast.error("Invoice No and Company required"); return; }
+    if (!form.company) { toast.error("Company required"); return; }
 
     const payload = {
       company: form.company,
@@ -189,7 +187,7 @@ const AdminInvoice = () => {
   const resetForm = () => {
     setEditingId(null);
     setForm({
-      event_id: "", invoice_no: "", invoice_date: new Date().toISOString().split("T")[0], due_date: "",
+      event_id: "", invoice_date: new Date().toISOString().split("T")[0], due_date: "",
       for_label: "Balloon Decoration", client_name: "", phone: "", company: "", ntn: "",
       event_detail: "", items: [emptyLine()], discount: 0, tax_percent: 0, terms: "",
     });
@@ -218,7 +216,7 @@ const AdminInvoice = () => {
   const handlePreview = (inv: InvoiceRow) => {
     const ev = events.find(e => e.id === inv.event_id);
     setPreviewData({
-      invoice_no: `I/TA/${inv.id.slice(0, 8).toUpperCase()}`,
+      invoice_no: inv.invoice_no || `I/TA/${inv.id.slice(0, 8).toUpperCase()}`,
       invoice_date: new Date(inv.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }),
       due_date: "",
       for_label: "Balloon Decoration",
@@ -295,6 +293,7 @@ const AdminInvoice = () => {
 
   const filteredInvoices = invoices.filter(i =>
     i.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (i.invoice_no && i.invoice_no.toLowerCase().includes(searchQuery.toLowerCase())) ||
     i.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -345,7 +344,7 @@ const AdminInvoice = () => {
             <tbody>
               {filteredInvoices.map(inv => (
                 <tr key={inv.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs">I/TA/{inv.id.slice(0, 8).toUpperCase()}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{inv.invoice_no || `I/TA/${inv.id.slice(0, 8).toUpperCase()}`}</td>
                   <td className="px-4 py-3 font-medium">{inv.company}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(inv.created_at).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}</td>
                   <td className="px-4 py-3 text-right font-mono">Rs {inv.total.toLocaleString()}</td>
@@ -386,8 +385,7 @@ const AdminInvoice = () => {
               </Select>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2"><Label>Invoice No *</Label><Input value={form.invoice_no} onChange={e => setForm(p => ({ ...p, invoice_no: e.target.value }))} placeholder="I/TA/..." required /></div>
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Invoice Date</Label><Input type="date" value={form.invoice_date} onChange={e => setForm(p => ({ ...p, invoice_date: e.target.value }))} /></div>
               <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} /></div>
             </div>
