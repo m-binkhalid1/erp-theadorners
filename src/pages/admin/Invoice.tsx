@@ -188,11 +188,11 @@ const AdminInvoice = () => {
   const total = subtotal - form.discount + subtotal * (form.tax_percent / 100);
 
   const handleSave = async () => {
-    if (!form.client_name && !form.company) { toast.error("Client Name or Company required"); return; }
+    if (!form.client_name.trim() && !form.company.trim()) { toast.error("Client Name or Company required"); return; }
 
     const payload = {
-      company: form.company || form.client_name,
-      client_name: form.client_name,
+      company: (form.company || form.client_name).trim(),
+      client_name: form.client_name.trim(),
       event_id: form.event_id || null,
       items: form.items as any,
       total,

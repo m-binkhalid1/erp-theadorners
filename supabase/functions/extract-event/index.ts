@@ -146,21 +146,21 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
     // Create event using service role
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const clientName = extracted.client_name || "Unknown";
+    const clientName = (extracted.client_name || "Unknown").trim();
 
     const { data: eventData, error: eventError } = await adminClient.from("events").insert({
       company: clientName, // backward compat
       client_name: clientName,
-      coordinator_company: extracted.coordinator_company || "",
-      coordinator_name: extracted.coordinator_name || "",
-      event_place: extracted.event_place || "TBD",
-      phone_no: extracted.phone_no || "",
+      coordinator_company: (extracted.coordinator_company || "").trim(),
+      coordinator_name: (extracted.coordinator_name || "").trim(),
+      event_place: (extracted.event_place || "TBD").trim(),
+      phone_no: (extracted.phone_no || "").trim(),
       date: extracted.date || new Date().toISOString().split("T")[0],
       balloons: "", // deprecated
       event_items: eventItems,
       total_amount: totalAmount,
-      employees: extracted.employees || "",
-      details: extracted.details || "",
+      employees: (extracted.employees || "").trim(),
+      details: (extracted.details || "").trim(),
       created_by: userId,
       status: "pending_ai",
       ai_source: true,

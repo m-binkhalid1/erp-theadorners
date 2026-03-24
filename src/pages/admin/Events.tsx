@@ -121,14 +121,14 @@ const AdminEvents = () => {
     e.preventDefault();
     const payload = {
       date: form.date,
-      phone_no: form.phone_no,
-      event_place: form.event_place,
-      company: form.client_name, // keep company field populated for backward compat
-      client_name: form.client_name,
-      coordinator_company: form.coordinator_company,
-      coordinator_name: form.coordinator_name,
-      employees: form.employees,
-      details: form.details,
+      phone_no: form.phone_no.trim(),
+      event_place: form.event_place.trim(),
+      company: form.client_name.trim(), // keep company field populated for backward compat
+      client_name: form.client_name.trim(),
+      coordinator_company: form.coordinator_company.trim(),
+      coordinator_name: form.coordinator_name.trim(),
+      employees: form.employees.trim(),
+      details: form.details.trim(),
       balloons: "", // deprecated
       event_items: form.event_items as any,
       total_amount: totalAmount,
