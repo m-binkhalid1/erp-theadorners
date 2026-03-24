@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   Search, Loader2, ChevronDown, ChevronRight,
@@ -40,11 +39,13 @@ interface SimilarGroup { names: string[] }
 interface InvoiceRow {
   id: string;
   company: string;
+  client_name: string;
   event_id: string | null;
   items: any[];
   total: number;
   paid: number;
   status: string;
+  invoice_no: string;
   created_at: string;
 }
 
@@ -68,11 +69,11 @@ const AdminLedger = () => {
 
   // Manual Add Entry dialog
   const [addDialog, setAddDialog] = useState(false);
-  const [addForm, setAddForm] = useState({ company: "", total: 0, paid: 0, description: "" });
+  const [addForm, setAddForm] = useState({ client_name: "", company: "", total: 0, paid: 0, description: "" });
 
   // Edit Entry dialog
   const [editDialog, setEditDialog] = useState(false);
-  const [editForm, setEditForm] = useState({ id: "", company: "", total: 0, paid: 0, status: "" });
+  const [editForm, setEditForm] = useState({ id: "", client_name: "", company: "", total: 0, paid: 0, status: "" });
 
   const fetchAll = async () => {
     try {
@@ -98,23 +99,26 @@ const AdminLedger = () => {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Case-insensitive grouping
+  // Case-insensitive grouping by company (organizer/coordinator)
   const ledger = useMemo<CompanyLedger[]>(() => {
     const map = new Map<string, { displayName: string; invoices: InvoiceRow[]; allNames: Set<string> }>();
     invoices.forEach(inv => {
-      const key = inv.company.trim().toLowerCase();
+      // Group by company (coordinator), if empty, group by client_name
+      const groupName = (inv.company || inv.client_name || "Unknown").trim();
+      const key = groupName.toLowerCase();
+      
       const existing = map.get(key);
       if (existing) {
         existing.invoices.push(inv);
-        existing.allNames.add(inv.company);
+        existing.allNames.add(groupName);
       } else {
-        map.set(key, { displayName: inv.company, invoices: [inv], allNames: new Set([inv.company]) });
+        map.set(key, { displayName: groupName, invoices: [inv], allNames: new Set([groupName]) });
       }
     });
     return Array.from(map.values())
       .map(({ displayName, invoices: invs }) => ({
         company: displayName,
-        invoices: invs,
+        invoices: invs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
         totalAmount: invs.reduce((s, i) => s + i.total, 0),
         paidAmount: invs.reduce((s, i) => s + i.paid, 0),
         remaining: invs.reduce((s, i) => s + (i.total - i.paid), 0),
@@ -156,7 +160,10 @@ const AdminLedger = () => {
   };
 
   const filtered = useMemo(() =>
-    ledger.filter(l => l.company.toLowerCase().includes(searchQuery.toLowerCase())),
+    ledger.filter(l => 
+      l.company.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      l.invoices.some(i => i.client_name?.toLowerCase().includes(searchQuery.toLowerCase()))
+    ),
     [ledger, searchQuery]
   );
 
@@ -190,21 +197,26 @@ const AdminLedger = () => {
 
   // Manual Add Entry
   const handleAddEntry = async () => {
-    if (!addForm.company.trim()) { toast.error("Company name daalein"); return; }
-    if (addForm.total <= 0) { toast.error("Total amount daalein"); return; }
+    if (!addForm.client_name.trim()) { toast.error("Client name lazmi hai"); return; }
+    if (addForm.total <= 0) { toast.error("Total amount 0 se zyada hona chahiye"); return; }
     try {
       const status = addForm.paid >= addForm.total ? "paid" : addForm.paid > 0 ? "partial" : "pending";
-      const { error } = await supabase.from("invoices").insert({
-        company: addForm.company.trim(),
+      const payload = {
+        client_name: addForm.client_name.trim(),
+        company: addForm.company.trim() || addForm.client_name.trim(), // Default organizer to client if empty
         total: addForm.total,
         paid: addForm.paid,
         status,
         items: addForm.description ? [{ description: addForm.description, qty: 1, unit_price: addForm.total, subtotal: addForm.total }] : [],
-      });
+      };
+      
+      const { error } = await supabase.from("invoices").insert(payload);
+      
       if (error) { toast.error(`Add error: ${error.message}`); return; }
+      
       toast.success("Ledger entry add ho gayi! ✅");
       setAddDialog(false);
-      setAddForm({ company: "", total: 0, paid: 0, description: "" });
+      setAddForm({ client_name: "", company: "", total: 0, paid: 0, description: "" });
       fetchAll();
     } catch (err) {
       console.error("Add entry exception:", err);
@@ -216,7 +228,8 @@ const AdminLedger = () => {
   const openEditDialog = (inv: InvoiceRow) => {
     setEditForm({
       id: inv.id,
-      company: inv.company,
+      client_name: inv.client_name || "",
+      company: inv.company || "",
       total: inv.total,
       paid: inv.paid,
       status: inv.status,
@@ -225,19 +238,26 @@ const AdminLedger = () => {
   };
 
   const handleEditEntry = async () => {
-    if (!editForm.company.trim()) { toast.error("Company name daalein"); return; }
-    if (editForm.total < 0) { toast.error("Total amount sahi daalein"); return; }
-    if (editForm.paid < 0) { toast.error("Paid amount sahi daalein"); return; }
+    if (!editForm.client_name.trim()) { toast.error("Client name lazmi hai"); return; }
+    if (editForm.total < 0) { toast.error("Total amount sahi daalein (0 ya zyada)"); return; }
+    if (editForm.paid < 0) { toast.error("Paid amount sahi daalein (0 ya zyada)"); return; }
     if (editForm.paid > editForm.total) { toast.error("Paid amount total se zyada nahi ho sakta"); return; }
+    
     try {
       const status = editForm.paid >= editForm.total ? "paid" : editForm.paid > 0 ? "partial" : "pending";
-      const { error } = await supabase.from("invoices").update({
-        company: editForm.company.trim(),
+      
+      const payload = {
+        client_name: editForm.client_name.trim(),
+        company: editForm.company.trim() || editForm.client_name.trim(), 
         total: editForm.total,
         paid: editForm.paid,
         status,
-      }).eq("id", editForm.id);
+      };
+
+      const { error } = await supabase.from("invoices").update(payload).eq("id", editForm.id);
+      
       if (error) { toast.error(`Update error: ${error.message}`); return; }
+      
       toast.success("Entry update ho gayi! ✅");
       setEditDialog(false);
       fetchAll();
@@ -249,7 +269,8 @@ const AdminLedger = () => {
 
   // Delete Entry
   const handleDeleteEntry = async (inv: InvoiceRow) => {
-    if (!confirm(`Kya aap "${inv.company}" ki ye entry delete karna chahte hain?\nTotal: Rs ${inv.total.toLocaleString()}`)) return;
+    const displayName = inv.client_name !== inv.company ? `${inv.client_name} (${inv.company})` : inv.client_name;
+    if (!confirm(`Kya aap "${displayName}" ki ye entry delete karna chahte hain?\nTotal: Rs ${inv.total.toLocaleString()}`)) return;
     try {
       // Unlink from event if linked
       if (inv.event_id) {
@@ -333,7 +354,7 @@ const AdminLedger = () => {
       {/* Search */}
       <div className="relative max-w-md">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-        <Input placeholder="Company search karein..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-12 h-12 rounded-xl text-base" />
+        <Input placeholder="Search client/company..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-12 h-12 rounded-xl text-base" />
       </div>
 
       {/* Similar Names Warning */}
@@ -405,7 +426,7 @@ const AdminLedger = () => {
                     {isOpen ? <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />}
                     <div className="min-w-0">
                       <p className="font-display text-lg font-bold truncate">{entry.company}</p>
-                      <p className="text-sm text-muted-foreground">{entry.invoices.length} invoice{entry.invoices.length > 1 ? "s" : ""}</p>
+                      <p className="text-sm text-muted-foreground">{entry.invoices.length} entries</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 sm:gap-6 shrink-0 flex-wrap justify-end">
@@ -440,6 +461,7 @@ const AdminLedger = () => {
                           <tr>
                             <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Invoice</th>
                             <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Date</th>
+                            <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Client Name</th>
                             <th className="px-5 py-3 text-center font-semibold text-muted-foreground">Sync</th>
                             <th className="px-5 py-3 text-right font-semibold text-muted-foreground">Total</th>
                             <th className="px-5 py-3 text-right font-semibold text-muted-foreground">Mila</th>
@@ -453,16 +475,17 @@ const AdminLedger = () => {
                             const balance = inv.total - inv.paid;
                             return (
                               <tr key={inv.id} className="border-t border-border hover:bg-muted/20 transition-colors">
-                                <td className="px-5 py-3 font-mono text-sm">I/TA/{inv.id.slice(0, 8).toUpperCase()}</td>
-                                <td className="px-5 py-3 text-sm text-muted-foreground">{new Date(inv.created_at).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                                <td className="px-5 py-3 font-mono text-sm">{inv.invoice_no || `I/TA/${inv.id.slice(0, 8).toUpperCase()}`}</td>
+                                <td className="px-5 py-3 text-sm text-muted-foreground whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                                <td className="px-5 py-3 font-medium text-sm">{inv.client_name || inv.company}</td>
                                 <td className="px-5 py-3 text-center">
                                   {inv.event_id ? (
                                     <Badge variant="outline" className="gap-1 text-xs text-success border-success/30">
-                                      <CheckCircle2 className="h-3 w-3" /> Linked
+                                      <CheckCircle2 className="h-3 w-3" /> Event Linked
                                     </Badge>
                                   ) : (
                                     <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
-                                      Manual
+                                      Manual File
                                     </Badge>
                                   )}
                                 </td>
@@ -478,11 +501,11 @@ const AdminLedger = () => {
                                     <Badge variant="outline">⏳ Pending</Badge>
                                   )}
                                 </td>
-                                <td className="px-5 py-3 text-right">
+                                <td className="px-5 py-3 text-right whitespace-nowrap">
                                   <div className="flex items-center justify-end gap-1">
                                     {balance > 0 && (
                                       <Button size="sm" variant="outline" className="h-8 rounded-lg font-semibold text-xs" onClick={() => {
-                                        setPayDialog({ open: true, invoiceId: inv.id, company: inv.company, remaining: balance });
+                                        setPayDialog({ open: true, invoiceId: inv.id, company: entry.company, remaining: balance });
                                         setPayAmount(balance);
                                       }}>
                                         💰 Pay
@@ -531,7 +554,7 @@ const AdminLedger = () => {
       </Dialog>
 
       {/* ===== MANUAL ADD ENTRY DIALOG ===== */}
-      <Dialog open={addDialog} onOpenChange={o => { setAddDialog(o); if (!o) setAddForm({ company: "", total: 0, paid: 0, description: "" }); }}>
+      <Dialog open={addDialog} onOpenChange={o => { setAddDialog(o); if (!o) setAddForm({ client_name: "", company: "", total: 0, paid: 0, description: "" }); }}>
         <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader><DialogTitle className="text-xl">➕ Manual Ledger Entry</DialogTitle></DialogHeader>
           <div className="space-y-4">
@@ -539,11 +562,20 @@ const AdminLedger = () => {
               Agar invoice sync mein masla ho ya koi entry manually add karni ho to yahan se daalein.
             </p>
             <div className="space-y-2">
-              <Label className="font-semibold">Company Name *</Label>
+              <Label className="font-semibold cursor-help" title="Zaroori hai: jis ka event hai us ka poora naam">Client Name *</Label>
+              <Input
+                value={addForm.client_name}
+                onChange={e => setAddForm(p => ({ ...p, client_name: e.target.value }))}
+                placeholder="Jis ka event hai..."
+                className="h-11 rounded-xl"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-semibold cursor-help" title="Optional: Agar koi aur company organize karwa rahi ho (e.g Ignite Events)">Company / Coordinator (Organizer)</Label>
               <Input
                 value={addForm.company}
                 onChange={e => setAddForm(p => ({ ...p, company: e.target.value }))}
-                placeholder="Company ka naam..."
+                placeholder="Agar khali chorenge to Client Name use hoga"
                 className="h-11 rounded-xl"
               />
             </div>
@@ -602,10 +634,20 @@ const AdminLedger = () => {
               Invoice ID: <span className="font-mono font-semibold">I/TA/{editForm.id.slice(0, 8).toUpperCase()}</span>
             </p>
             <div className="space-y-2">
-              <Label className="font-semibold">Company Name</Label>
+              <Label className="font-semibold">Client Name *</Label>
+              <Input
+                value={editForm.client_name}
+                onChange={e => setEditForm(p => ({ ...p, client_name: e.target.value }))}
+                placeholder="Jis ka event hai..."
+                className="h-11 rounded-xl border-primary/20"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-semibold">Company / Coordinator (Organizer)</Label>
               <Input
                 value={editForm.company}
                 onChange={e => setEditForm(p => ({ ...p, company: e.target.value }))}
+                placeholder="Khali chorenge tou Client ko assign ho jayega"
                 className="h-11 rounded-xl"
               />
             </div>
