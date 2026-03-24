@@ -59,7 +59,7 @@ const AdminEvents = () => {
     event_place: "",
     client_name: "",
     coordinator_company: "",
-    coordinator_name: "",
+    company: "",
     employees: "",
     details: "",
     event_items: [emptyItem()] as EventLineItem[],
@@ -94,7 +94,7 @@ const AdminEvents = () => {
   const resetForm = () => {
     setForm({
       date: "", phone_no: "", event_place: "",
-      client_name: "", coordinator_company: "", coordinator_name: "",
+      client_name: "", coordinator_company: "", company: "",
       employees: "", details: "",
       event_items: [emptyItem()],
     });
@@ -119,14 +119,16 @@ const AdminEvents = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.client_name.trim()) { toast.error("Client Name lazmi hai"); return; }
+
     const payload = {
       date: form.date,
       phone_no: form.phone_no.trim(),
       event_place: form.event_place.trim(),
-      company: form.client_name.trim(), // keep company field populated for backward compat
-      client_name: form.client_name.trim(),
-      coordinator_company: form.coordinator_company.trim(),
-      coordinator_name: form.coordinator_name.trim(),
+      company: form.company.trim(), // Event of Company (e.g. Food Panda) — optional
+      client_name: form.client_name.trim(), // Contact person (e.g. Anthony) — required
+      coordinator_company: form.coordinator_company.trim(), // Organizing company (e.g. Ignite Events) — optional
+      coordinator_name: "", // deprecated from UI
       employees: form.employees.trim(),
       details: form.details.trim(),
       balloons: "", // deprecated
@@ -173,9 +175,9 @@ const AdminEvents = () => {
       date: event.date,
       phone_no: event.phone_no,
       event_place: event.event_place,
-      client_name: event.client_name || event.company,
+      client_name: event.client_name || "",
       coordinator_company: event.coordinator_company || "",
-      coordinator_name: event.coordinator_name || "",
+      company: event.company || "",
       employees: event.employees,
       details: event.details,
       event_items: (event.event_items && event.event_items.length > 0)
@@ -185,21 +187,26 @@ const AdminEvents = () => {
     setDialogOpen(true);
   };
 
-  // Display helper: show client + coordinator info
+  // Display helper
   const getDisplayName = (event: Event) => {
-    const client = event.client_name || event.company;
+    const client = event.client_name || "Unknown";
     if (event.coordinator_company) {
       return (
         <div>
           <span className="font-bold">{client}</span>
-          <span className="text-muted-foreground text-xs block">via {event.coordinator_company}{event.coordinator_name ? ` (${event.coordinator_name})` : ""}</span>
+          <span className="text-muted-foreground text-xs block">🏗️ {event.coordinator_company}</span>
+          {event.company && <span className="text-muted-foreground text-xs block">🏢 {event.company}</span>}
         </div>
       );
     }
-    return <span className="font-bold">{client}</span>;
+    return (
+      <div>
+        <span className="font-bold">{client}</span>
+        {event.company && <span className="text-muted-foreground text-xs block">🏢 {event.company}</span>}
+      </div>
+    );
   };
 
-  // Format items for display
   const getItemsSummary = (event: Event) => {
     if (event.event_items && event.event_items.length > 0 && event.event_items.some(i => i.description)) {
       return event.event_items.filter(i => i.description).map(i => i.description).join(", ");
@@ -241,28 +248,20 @@ const AdminEvents = () => {
                 </div>
               </div>
 
-              {/* Client Name & Place */}
+              {/* Client Name & Coordinator Event Company */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-[15px] font-semibold">🏢 Client Name *</Label>
+                  <Label className="text-[15px] font-semibold">👤 Client Name *</Label>
                   <Input
                     value={form.client_name}
                     onChange={(e) => setForm({ ...form, client_name: e.target.value })}
                     required
-                    placeholder="jis ka event hai — e.g. Food Panda, Birthday Person"
+                    placeholder="jo aap se coordinate kr raha hai — e.g. Anthony"
                     className="h-11 rounded-xl"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[15px] font-semibold">📍 Jagah</Label>
-                  <Input value={form.event_place} onChange={(e) => setForm({ ...form, event_place: e.target.value })} required className="h-11 rounded-xl" />
-                </div>
-              </div>
-
-              {/* Coordinator Company & Person (Optional) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[15px] font-semibold">🏗️ Coordinator Company <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+                  <Label className="text-[15px] font-semibold">🏗️ Coordinator Event Company <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
                   <Input
                     value={form.coordinator_company}
                     onChange={(e) => setForm({ ...form, coordinator_company: e.target.value })}
@@ -270,14 +269,22 @@ const AdminEvents = () => {
                     className="h-11 rounded-xl"
                   />
                 </div>
+              </div>
+
+              {/* Event of Company (optional) & Place */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-[15px] font-semibold">👤 Coordinator Person <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+                  <Label className="text-[15px] font-semibold">🏢 Event of Company <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
                   <Input
-                    value={form.coordinator_name}
-                    onChange={(e) => setForm({ ...form, coordinator_name: e.target.value })}
-                    placeholder="jo coordinate kr raha — e.g. Anthony"
+                    value={form.company}
+                    onChange={(e) => setForm({ ...form, company: e.target.value })}
+                    placeholder="jis company ka event hai — e.g. Food Panda"
                     className="h-11 rounded-xl"
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[15px] font-semibold">📍 Jagah</Label>
+                  <Input value={form.event_place} onChange={(e) => setForm({ ...form, event_place: e.target.value })} required className="h-11 rounded-xl" />
                 </div>
               </div>
 
@@ -316,34 +323,15 @@ const AdminEvents = () => {
                       {form.event_items.map((item, idx) => (
                         <tr key={idx} className="border-t border-border">
                           <td className="px-2 py-1">
-                            <Input
-                              className="h-8 text-sm rounded-lg"
-                              value={item.description}
-                              onChange={e => updateItem(idx, "description", e.target.value)}
-                              placeholder="e.g. Balloons, Danglers, Flowers..."
-                            />
+                            <Input className="h-8 text-sm rounded-lg" value={item.description} onChange={e => updateItem(idx, "description", e.target.value)} placeholder="e.g. Balloons, Danglers, Flowers..." />
                           </td>
                           <td className="px-2 py-1">
-                            <Input
-                              className="h-8 text-sm text-center rounded-lg"
-                              type="number"
-                              min={0}
-                              value={item.qty || ""}
-                              onChange={e => updateItem(idx, "qty", parseInt(e.target.value) || 0)}
-                            />
+                            <Input className="h-8 text-sm text-center rounded-lg" type="number" min={0} value={item.qty || ""} onChange={e => updateItem(idx, "qty", parseInt(e.target.value) || 0)} />
                           </td>
                           <td className="px-2 py-1">
-                            <Input
-                              className="h-8 text-sm text-center rounded-lg"
-                              type="number"
-                              min={0}
-                              value={item.unit_price || ""}
-                              onChange={e => updateItem(idx, "unit_price", parseFloat(e.target.value) || 0)}
-                            />
+                            <Input className="h-8 text-sm text-center rounded-lg" type="number" min={0} value={item.unit_price || ""} onChange={e => updateItem(idx, "unit_price", parseFloat(e.target.value) || 0)} />
                           </td>
-                          <td className="px-2 py-1 text-right font-mono text-sm">
-                            Rs {item.subtotal.toLocaleString()}
-                          </td>
+                          <td className="px-2 py-1 text-right font-mono text-sm">Rs {item.subtotal.toLocaleString()}</td>
                           <td className="px-2 py-1">
                             {form.event_items.length > 1 && (
                               <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeItem(idx)}>
@@ -426,7 +414,7 @@ const AdminEvents = () => {
         </div>
       )}
 
-      {/* Events - Cards on mobile, Table on desktop */}
+      {/* Events List */}
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
       ) : confirmedEvents.length === 0 ? (
@@ -494,7 +482,7 @@ const AdminEvents = () => {
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">#</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📆 Date</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📅 Day</th>
-                  <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">🏢 Client</th>
+                  <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">👤 Client</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📍 Jagah</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📞 Phone</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📦 Items</th>

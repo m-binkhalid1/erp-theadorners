@@ -51,9 +51,9 @@ serve(async (req) => {
 Your job is to extract event details from employee chat messages. Employees describe events in casual Urdu/English (Roman Urdu).
 
 Extract these fields:
-- client_name: The end client name (whose event it is, e.g. "Food Panda", "Ali's Birthday")
-- coordinator_company: The company coordinating/organizing the event (optional, e.g. "Ignite Events")
-- coordinator_name: The person coordinating from the organizing company (optional, e.g. "Anthony")
+- client_name: The CONTACT PERSON who is coordinating with us (e.g. "Anthony", "Ali", "Moen"). This is the person we deal with directly.
+- coordinator_company: The EVENT MANAGEMENT COMPANY that is organizing/coordinating the event (optional, e.g. "Ignite Events", "Event Masters")
+- event_of_company: The END CLIENT COMPANY whose event this is (optional, e.g. "Food Panda", "Jazz"). This is the company the event is FOR, not the company organizing it.
 - event_place: Where the event is happening
 - phone_no: Client phone number (Pakistani format)
 - date: Event date (ISO format YYYY-MM-DD)
@@ -61,9 +61,16 @@ Extract these fields:
 - employees: Which employees are going
 - details: Any other event details
 
-If the message does NOT describe an event (just a greeting, question, or general chat), return is_event: false.
+IMPORTANT DISTINCTION:
+- client_name = the PERSON we are in contact with (e.g. "Anthony")
+- coordinator_company = the EVENT COMPANY organizing it (e.g. "Ignite Events")
+- event_of_company = whose event it actually IS (e.g. "Food Panda")
+
+For direct events (like birthdays), client_name is the person, no coordinator needed.
+
+If the message does NOT describe an event, return is_event: false.
 If it IS an event description, return is_event: true with as many fields as you can extract. Leave unknown fields as empty strings.
-For dates: if they say "kal" or "tomorrow" assume the next day from today. "Aaj" means today. Parse relative dates.
+For dates: if they say "kal" or "tomorrow" assume the next day from today. "Aaj" means today.
 Today's date is: ${new Date().toISOString().split("T")[0]}`
           },
           { role: "user", content: message }
@@ -78,9 +85,9 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
                 type: "object",
                 properties: {
                   is_event: { type: "boolean", description: "Whether this message describes an event" },
-                  client_name: { type: "string", description: "End client name (whose event it is)" },
-                  coordinator_company: { type: "string", description: "Organizing/coordinating company (optional)" },
-                  coordinator_name: { type: "string", description: "Contact person from coordinator company (optional)" },
+                  client_name: { type: "string", description: "Contact person name — who we deal with (e.g. Anthony, Ali)" },
+                  coordinator_company: { type: "string", description: "Event management company organizing it (e.g. Ignite Events)" },
+                  event_of_company: { type: "string", description: "End client company whose event this is (e.g. Food Panda)" },
                   event_place: { type: "string", description: "Event venue/location" },
                   phone_no: { type: "string", description: "Client phone number" },
                   date: { type: "string", description: "Event date in YYYY-MM-DD format" },
@@ -147,12 +154,13 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const clientName = (extracted.client_name || "Unknown").trim();
+    const eventOfCompany = (extracted.event_of_company || "").trim();
 
     const { data: eventData, error: eventError } = await adminClient.from("events").insert({
-      company: clientName, // backward compat
-      client_name: clientName,
+      company: eventOfCompany, // Event of Company (e.g. Food Panda)
+      client_name: clientName, // Contact person (e.g. Anthony)
       coordinator_company: (extracted.coordinator_company || "").trim(),
-      coordinator_name: (extracted.coordinator_name || "").trim(),
+      coordinator_name: "", // deprecated from UI
       event_place: (extracted.event_place || "TBD").trim(),
       phone_no: (extracted.phone_no || "").trim(),
       date: extracted.date || new Date().toISOString().split("T")[0],

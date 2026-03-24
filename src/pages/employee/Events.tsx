@@ -56,7 +56,7 @@ const EmployeeEvents = () => {
   const pastEvents = events.filter(e => e.date < today);
 
   const getClientDisplay = (event: Event) => {
-    const client = event.client_name || event.company;
+    const client = event.client_name || "Unknown";
     if (event.coordinator_company) {
       return `${client} (via ${event.coordinator_company})`;
     }
@@ -105,8 +105,8 @@ const EmployeeEvents = () => {
                         {new Date(event.date).toLocaleDateString("en-PK", { day: "numeric", month: "short" })}
                       </Badge>
                     </div>
-                    {event.coordinator_name && (
-                      <p className="text-[15px] text-muted-foreground">👤 Coordinator: {event.coordinator_name}</p>
+                    {event.company && (
+                      <p className="text-[15px] text-muted-foreground">🏢 Event of: {event.company}</p>
                     )}
                     <p className="text-[15px] text-muted-foreground">
                       📍 {event.event_place}

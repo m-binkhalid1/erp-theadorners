@@ -247,6 +247,7 @@ export type Database = {
           id: string
           invoice_no: string | null
           items: Json
+          ledger_label: string
           paid: number
           status: string
           total: number
@@ -260,6 +261,7 @@ export type Database = {
           id?: string
           invoice_no?: string | null
           items?: Json
+          ledger_label?: string
           paid?: number
           status?: string
           total?: number
@@ -273,6 +275,7 @@ export type Database = {
           id?: string
           invoice_no?: string | null
           items?: Json
+          ledger_label?: string
           paid?: number
           status?: string
           total?: number
