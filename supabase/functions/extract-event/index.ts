@@ -51,11 +51,13 @@ serve(async (req) => {
 Your job is to extract event details from employee chat messages. Employees describe events in casual Urdu/English (Roman Urdu).
 
 Extract these fields:
-- company: The client/company name
+- client_name: The end client name (whose event it is, e.g. "Food Panda", "Ali's Birthday")
+- coordinator_company: The company coordinating/organizing the event (optional, e.g. "Ignite Events")
+- coordinator_name: The person coordinating from the organizing company (optional, e.g. "Anthony")
 - event_place: Where the event is happening
 - phone_no: Client phone number (Pakistani format)
 - date: Event date (ISO format YYYY-MM-DD)
-- balloons: Balloon details/quantity
+- items: Array of items needed for the event (e.g. balloons, danglers, flowers). Each item has: description (string), qty (number), unit_price (number)
 - employees: Which employees are going
 - details: Any other event details
 
@@ -76,11 +78,24 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
                 type: "object",
                 properties: {
                   is_event: { type: "boolean", description: "Whether this message describes an event" },
-                  company: { type: "string", description: "Client/company name" },
+                  client_name: { type: "string", description: "End client name (whose event it is)" },
+                  coordinator_company: { type: "string", description: "Organizing/coordinating company (optional)" },
+                  coordinator_name: { type: "string", description: "Contact person from coordinator company (optional)" },
                   event_place: { type: "string", description: "Event venue/location" },
                   phone_no: { type: "string", description: "Client phone number" },
                   date: { type: "string", description: "Event date in YYYY-MM-DD format" },
-                  balloons: { type: "string", description: "Balloon details" },
+                  items: {
+                    type: "array",
+                    description: "Items needed for the event",
+                    items: {
+                      type: "object",
+                      properties: {
+                        description: { type: "string", description: "Item name (e.g. Balloons, Danglers, Flowers)" },
+                        qty: { type: "number", description: "Quantity" },
+                        unit_price: { type: "number", description: "Price per unit" },
+                      },
+                    },
+                  },
                   employees: { type: "string", description: "Assigned employees" },
                   details: { type: "string", description: "Other event details" },
                 },
@@ -119,15 +134,31 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
       });
     }
 
+    // Build event_items from extracted items
+    const eventItems = (extracted.items || []).map((i: any) => ({
+      description: i.description || "",
+      qty: i.qty || 0,
+      unit_price: i.unit_price || 0,
+      subtotal: (i.qty || 0) * (i.unit_price || 0),
+    }));
+    const totalAmount = eventItems.reduce((s: number, i: any) => s + i.subtotal, 0);
+
     // Create event using service role
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    const clientName = extracted.client_name || "Unknown";
+
     const { data: eventData, error: eventError } = await adminClient.from("events").insert({
-      company: extracted.company || "Unknown",
+      company: clientName, // backward compat
+      client_name: clientName,
+      coordinator_company: extracted.coordinator_company || "",
+      coordinator_name: extracted.coordinator_name || "",
       event_place: extracted.event_place || "TBD",
       phone_no: extracted.phone_no || "",
       date: extracted.date || new Date().toISOString().split("T")[0],
-      balloons: extracted.balloons || "",
+      balloons: "", // deprecated
+      event_items: eventItems,
+      total_amount: totalAmount,
       employees: extracted.employees || "",
       details: extracted.details || "",
       created_by: userId,

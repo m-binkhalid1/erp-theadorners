@@ -15,23 +15,37 @@ import { Plus, FileText, Loader2, Printer, Eye, Trash2, Search, Download } from 
 import InvoiceTemplate, { type InvoiceData, type InvoiceLineItem } from "@/components/InvoiceTemplate";
 import { getLogoBase64 } from "@/lib/logoBase64";
 
+interface EventLineItem {
+  description: string;
+  qty: number;
+  unit_price: number;
+  subtotal: number;
+}
+
 interface EventRecord {
   id: string;
   company: string;
+  client_name: string;
+  coordinator_company: string;
+  coordinator_name: string;
   event_place: string;
   phone_no: string;
   date: string;
   details: string;
   balloons: string;
+  event_items: EventLineItem[];
+  total_amount: number;
   invoice_id: string | null;
 }
 
 interface InvoiceRow {
   id: string;
   company: string;
+  client_name: string;
   event_id: string | null;
   items: InvoiceLineItem[];
   total: number;
+  paid: number;
   status: string;
   invoice_no: string;
   created_at: string;
@@ -69,7 +83,7 @@ const AdminInvoice = () => {
     event_id: "",
     invoice_date: new Date().toISOString().split("T")[0],
     due_date: "",
-    for_label: "Balloon Decoration",
+    for_label: "Decoration Services",
     client_name: "",
     phone: "",
     company: "",
@@ -88,8 +102,14 @@ const AdminInvoice = () => {
       supabase.from("invoices").select("*").order("created_at", { ascending: false }),
       supabase.from("events").select("*").order("date", { ascending: false }),
     ]);
-    if (invRes.data) setInvoices(invRes.data.map(r => ({ ...r, items: (r.items as unknown as InvoiceLineItem[] | null) ?? [] })));
-    if (evRes.data) setEvents(evRes.data as EventRecord[]);
+    if (invRes.data) setInvoices(invRes.data.map(r => ({
+      ...r,
+      items: (r.items as unknown as InvoiceLineItem[] | null) ?? [],
+    })));
+    if (evRes.data) setEvents(evRes.data.map(d => ({
+      ...d,
+      event_items: (d.event_items as unknown as EventLineItem[] | null) ?? [],
+    })) as EventRecord[]);
     setLoading(false);
   };
 
@@ -99,17 +119,38 @@ const AdminInvoice = () => {
     getLogoBase64().then(src => setLogoBase64(src)).catch(() => {});
   }, []);
 
-  // Auto-fill from event
+  // Auto-fill from event — FIXED: properly uses client_name and coordinator_company
   const handleEventSelect = (eventId: string) => {
     const ev = events.find(e => e.id === eventId);
     if (!ev) return;
+
+    const clientName = ev.client_name || ev.company;
+    const companyName = ev.coordinator_company || clientName;
+    
+    // Build items from event_items if available
+    let invoiceItems: InvoiceLineItem[] = [emptyLine()];
+    if (ev.event_items && ev.event_items.length > 0 && ev.event_items.some(i => i.description)) {
+      invoiceItems = ev.event_items.map(i => ({
+        description: i.description,
+        qty: i.qty || 0,
+        unit_price: i.unit_price || 0,
+        subtotal: i.subtotal || 0,
+      }));
+    }
+
+    // Build for_label from items
+    const itemNames = invoiceItems.filter(i => i.description).map(i => i.description);
+    const forLabel = itemNames.length > 0 ? itemNames.join(", ") : "Decoration Services";
+
     setForm(prev => ({
       ...prev,
       event_id: eventId,
-      company: ev.company,
+      client_name: clientName,
+      company: companyName,
       phone: ev.phone_no,
-      client_name: ev.company,
-      event_detail: `Decoration services for ${ev.company} at ${ev.event_place}. ${ev.details}`,
+      for_label: forLabel,
+      event_detail: `Decoration services for ${clientName} at ${ev.event_place}. ${ev.details}`.trim(),
+      items: invoiceItems,
     }));
   };
 
@@ -147,10 +188,11 @@ const AdminInvoice = () => {
   const total = subtotal - form.discount + subtotal * (form.tax_percent / 100);
 
   const handleSave = async () => {
-    if (!form.company) { toast.error("Company required"); return; }
+    if (!form.client_name && !form.company) { toast.error("Client Name or Company required"); return; }
 
     const payload = {
-      company: form.company,
+      company: form.company || form.client_name,
+      client_name: form.client_name,
       event_id: form.event_id || null,
       items: form.items as any,
       total,
@@ -188,7 +230,7 @@ const AdminInvoice = () => {
     setEditingId(null);
     setForm({
       event_id: "", invoice_date: new Date().toISOString().split("T")[0], due_date: "",
-      for_label: "Balloon Decoration", client_name: "", phone: "", company: "", ntn: "",
+      for_label: "Decoration Services", client_name: "", phone: "", company: "", ntn: "",
       event_detail: "", items: [emptyLine()], discount: 0, tax_percent: 0, terms: "",
     });
   };
@@ -215,16 +257,23 @@ const AdminInvoice = () => {
 
   const handlePreview = (inv: InvoiceRow) => {
     const ev = events.find(e => e.id === inv.event_id);
+    const clientName = inv.client_name || inv.company;
+    const companyName = ev?.coordinator_company || inv.company;
+    
+    // Build for_label from items
+    const itemNames = inv.items.filter(i => i.description).map(i => i.description);
+    const forLabel = itemNames.length > 0 ? itemNames.join(", ") : "Decoration Services";
+
     setPreviewData({
       invoice_no: inv.invoice_no || `I/TA/${inv.id.slice(0, 8).toUpperCase()}`,
       invoice_date: new Date(inv.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }),
       due_date: "",
-      for_label: "Balloon Decoration",
-      client_name: inv.company,
+      for_label: forLabel,
+      client_name: clientName,
       phone: ev?.phone_no ?? "",
-      company: inv.company,
+      company: companyName,
       ntn: "",
-      event_detail: ev ? `Decoration services for ${ev.company} at ${ev.event_place}. ${ev.details}` : "",
+      event_detail: ev ? `Decoration services for ${ev.client_name || ev.company} at ${ev.event_place}. ${ev.details}` : "",
       items: inv.items,
       discount: 0,
       tax_percent: 0,
@@ -235,7 +284,7 @@ const AdminInvoice = () => {
 
   const handleDownload = async () => {
     if (!printRef.current || !previewData) return;
-    const filename = `Invoice_${previewData.invoice_no.replace(/\//g, "-")}_${previewData.company.replace(/\s+/g, "_")}.pdf`;
+    const filename = `Invoice_${previewData.invoice_no.replace(/\//g, "-")}_${previewData.client_name.replace(/\s+/g, "_")}.pdf`;
     const pages = printRef.current.querySelectorAll(".invoice-page");
     if (pages.length === 0) return;
 
@@ -291,8 +340,18 @@ const AdminInvoice = () => {
     setTimeout(() => { printWindow.print(); }, 500);
   };
 
+  // Get display name for invoice list
+  const getInvoiceDisplayName = (inv: InvoiceRow) => {
+    const client = inv.client_name || inv.company;
+    if (inv.company && inv.client_name && inv.company !== inv.client_name) {
+      return <span>{client} <span className="text-muted-foreground text-xs">({inv.company})</span></span>;
+    }
+    return client;
+  };
+
   const filteredInvoices = invoices.filter(i =>
     i.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (i.client_name && i.client_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (i.invoice_no && i.invoice_no.toLowerCase().includes(searchQuery.toLowerCase())) ||
     i.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -333,7 +392,7 @@ const AdminInvoice = () => {
             <thead className="bg-muted/50">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Invoice</th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Company</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Client / Company</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">Total</th>
                 <th className="px-4 py-3 text-right font-medium text-muted-foreground">Paid</th>
@@ -345,7 +404,7 @@ const AdminInvoice = () => {
               {filteredInvoices.map(inv => (
                 <tr key={inv.id} className="border-t border-border hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 font-mono text-xs">{inv.invoice_no || `I/TA/${inv.id.slice(0, 8).toUpperCase()}`}</td>
-                  <td className="px-4 py-3 font-medium">{inv.company}</td>
+                  <td className="px-4 py-3 font-medium">{getInvoiceDisplayName(inv)}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(inv.created_at).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}</td>
                   <td className="px-4 py-3 text-right font-mono">Rs {inv.total.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right font-mono text-emerald-600">Rs {inv.paid.toLocaleString()}</td>
@@ -378,7 +437,8 @@ const AdminInvoice = () => {
                 <SelectContent>
                   {events.map(ev => (
                     <SelectItem key={ev.id} value={ev.id}>
-                      {ev.company} - {ev.event_place} ({ev.date}) {ev.invoice_id ? "✓" : ""}
+                      {ev.client_name || ev.company} - {ev.event_place} ({ev.date}) {ev.invoice_id ? "✓" : ""}
+                      {ev.total_amount > 0 ? ` — Rs ${ev.total_amount.toLocaleString()}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -392,10 +452,10 @@ const AdminInvoice = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>For</Label><Input value={form.for_label} onChange={e => setForm(p => ({ ...p, for_label: e.target.value }))} /></div>
-              <div className="space-y-2"><Label>Client Name *</Label><Input value={form.client_name} onChange={e => setForm(p => ({ ...p, client_name: e.target.value }))} required /></div>
+              <div className="space-y-2"><Label>Client Name *</Label><Input value={form.client_name} onChange={e => setForm(p => ({ ...p, client_name: e.target.value }))} required placeholder="jis ka event hai" /></div>
             </div>
             <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2"><Label>Company *</Label><Input value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))} required /></div>
+              <div className="space-y-2"><Label>Company / Coordinator *</Label><Input value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))} required placeholder="jo event krwa rahi hai" /></div>
               <div className="space-y-2"><Label>Phone</Label><Input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
               <div className="space-y-2"><Label>NTN</Label><Input value={form.ntn} onChange={e => setForm(p => ({ ...p, ntn: e.target.value }))} /></div>
             </div>

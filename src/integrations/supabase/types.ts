@@ -65,52 +65,67 @@ export type Database = {
         Row: {
           ai_source: boolean
           balloons: string
+          client_name: string
           company: string
+          coordinator_company: string
+          coordinator_name: string
           created_at: string
           created_by: string | null
           date: string
           details: string
           employees: string
+          event_items: Json
           event_place: string
           id: string
           index: number
           invoice_id: string | null
           phone_no: string
           status: string
+          total_amount: number
           updated_at: string
         }
         Insert: {
           ai_source?: boolean
           balloons?: string
+          client_name?: string
           company: string
+          coordinator_company?: string
+          coordinator_name?: string
           created_at?: string
           created_by?: string | null
           date: string
           details?: string
           employees?: string
+          event_items?: Json
           event_place: string
           id?: string
           index?: number
           invoice_id?: string | null
           phone_no: string
           status?: string
+          total_amount?: number
           updated_at?: string
         }
         Update: {
           ai_source?: boolean
           balloons?: string
+          client_name?: string
           company?: string
+          coordinator_company?: string
+          coordinator_name?: string
           created_at?: string
           created_by?: string | null
           date?: string
           details?: string
           employees?: string
+          event_items?: Json
           event_place?: string
           id?: string
           index?: number
           invoice_id?: string | null
           phone_no?: string
           status?: string
+          total_amount?: number
           updated_at?: string
         }
         Relationships: []
@@ -225,6 +240,7 @@ export type Database = {
       }
       invoices: {
         Row: {
+          client_name: string
           company: string
           created_at: string
           event_id: string | null
@@ -237,6 +253,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          client_name?: string
           company: string
           created_at?: string
           event_id?: string | null
@@ -249,6 +266,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          client_name?: string
           company?: string
           created_at?: string
           event_id?: string | null

@@ -5,6 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+interface EventLineItem {
+  description: string;
+  qty: number;
+  unit_price: number;
+  subtotal: number;
+}
+
 interface Event {
   id: string;
   index: number;
@@ -13,8 +20,13 @@ interface Event {
   event_place: string;
   balloons: string;
   company: string;
+  client_name: string;
+  coordinator_company: string;
+  coordinator_name: string;
   employees: string;
   details: string;
+  event_items: EventLineItem[];
+  total_amount: number;
   status: string;
 }
 
@@ -30,7 +42,10 @@ const EmployeeEvents = () => {
         .eq("status", "confirmed")
         .order("date", { ascending: true });
       if (error) toast.error(error.message);
-      else setEvents(data ?? []);
+      else setEvents((data ?? []).map(d => ({
+        ...d,
+        event_items: (d.event_items as unknown as EventLineItem[] | null) ?? [],
+      })) as Event[]);
       setLoading(false);
     };
     fetch();
@@ -39,6 +54,22 @@ const EmployeeEvents = () => {
   const today = new Date().toISOString().split("T")[0];
   const upcomingEvents = events.filter(e => e.date >= today);
   const pastEvents = events.filter(e => e.date < today);
+
+  const getClientDisplay = (event: Event) => {
+    const client = event.client_name || event.company;
+    if (event.coordinator_company) {
+      return `${client} (via ${event.coordinator_company})`;
+    }
+    return client;
+  };
+
+  const getItemsSummary = (event: Event) => {
+    if (event.event_items && event.event_items.length > 0 && event.event_items.some(i => i.description)) {
+      return event.event_items.filter(i => i.description).map(i => i.description).join(", ");
+    }
+    if (event.balloons) return event.balloons;
+    return null;
+  };
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
 
@@ -68,18 +99,21 @@ const EmployeeEvents = () => {
                         <Badge variant="outline" className="text-primary border-primary/30 font-bold">
                           #{event.index}
                         </Badge>
-                        <h3 className="text-lg font-bold">{event.company}</h3>
+                        <h3 className="text-lg font-bold">{getClientDisplay(event)}</h3>
                       </div>
                       <Badge className="bg-primary/10 text-primary font-semibold">
                         {new Date(event.date).toLocaleDateString("en-PK", { day: "numeric", month: "short" })}
                       </Badge>
                     </div>
+                    {event.coordinator_name && (
+                      <p className="text-[15px] text-muted-foreground">👤 Coordinator: {event.coordinator_name}</p>
+                    )}
                     <p className="text-[15px] text-muted-foreground">
                       📍 {event.event_place}
                     </p>
                     {event.details && <p className="text-[15px] text-muted-foreground/80">📝 {event.details}</p>}
                     <div className="flex flex-wrap gap-3 text-sm text-muted-foreground pt-1">
-                      {event.balloons && <span>🎈 {event.balloons}</span>}
+                      {getItemsSummary(event) && <span>📦 {getItemsSummary(event)}</span>}
                       {event.employees && <span>👥 {event.employees}</span>}
                       <span>📞 {event.phone_no}</span>
                     </div>
@@ -102,7 +136,7 @@ const EmployeeEvents = () => {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="font-bold">#{event.index}</Badge>
-                        <h3 className="text-lg font-bold">{event.company}</h3>
+                        <h3 className="text-lg font-bold">{getClientDisplay(event)}</h3>
                       </div>
                       <Badge variant="secondary">
                         {new Date(event.date).toLocaleDateString("en-PK", { day: "numeric", month: "short" })}
@@ -110,7 +144,7 @@ const EmployeeEvents = () => {
                     </div>
                     <p className="text-[15px] text-muted-foreground">📍 {event.event_place}</p>
                     <div className="flex flex-wrap gap-3 text-sm text-muted-foreground pt-1">
-                      {event.balloons && <span>🎈 {event.balloons}</span>}
+                      {getItemsSummary(event) && <span>📦 {getItemsSummary(event)}</span>}
                       <span>📞 {event.phone_no}</span>
                     </div>
                   </CardContent>
