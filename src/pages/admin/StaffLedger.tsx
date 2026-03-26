@@ -11,9 +11,35 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Search, Loader2, ChevronDown, ChevronRight, Plus, Pencil, Trash2,
-  Sparkles, Check, X, Wallet, Users
+  Sparkles, Check, X, Wallet, Users, AlertTriangle, Merge
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+
+// ── Levenshtein distance for similar name detection ──
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+
+function areSimilar(a: string, b: string): boolean {
+  const na = a.toLowerCase().trim();
+  const nb = b.toLowerCase().trim();
+  if (na === nb) return false;
+  // Check if one is a substring of the other (e.g. "Ghazi" vs "Ghazi Amanullah")
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const maxLen = Math.max(na.length, nb.length);
+  if (maxLen === 0) return false;
+  const dist = levenshtein(na, nb);
+  return dist <= 2 || (dist / maxLen) <= 0.25;
+}
+
+interface SimilarGroup { names: string[] }
 
 interface StaffEntry {
   id: string;
@@ -24,6 +50,7 @@ interface StaffEntry {
   event_id: string | null;
   status: string;
   created_by: string | null;
+  transaction_date: string;
   created_at: string;
   updated_at: string;
 }
@@ -54,12 +81,14 @@ const AdminStaffLedger = () => {
   const [addDialog, setAddDialog] = useState(false);
   const [addForm, setAddForm] = useState({
     worker_name: "", amount: 0, transaction_type: "advance", description: "",
+    transaction_date: new Date().toISOString().split("T")[0],
   });
 
   // Edit dialog
   const [editDialog, setEditDialog] = useState(false);
   const [editForm, setEditForm] = useState({
     id: "", worker_name: "", amount: 0, transaction_type: "advance", description: "", status: "approved",
+    transaction_date: new Date().toISOString().split("T")[0],
   });
 
   const fetchAll = async () => {
@@ -106,11 +135,40 @@ const AdminStaffLedger = () => {
     return Array.from(map.values())
       .map(({ displayName, entries: ents }) => ({
         name: displayName,
-        entries: ents.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+        entries: ents.sort((a, b) => new Date(b.transaction_date || b.created_at).getTime() - new Date(a.transaction_date || a.created_at).getTime()),
         totalGiven: ents.reduce((s, e) => s + e.amount, 0),
       }))
       .sort((a, b) => b.totalGiven - a.totalGiven);
   }, [approvedEntries]);
+
+  // ── Similar Names Detection ──
+  const similarWarnings = useMemo<SimilarGroup[]>(() => {
+    const workerNames = workerLedgers.map(l => l.name);
+    const groups: SimilarGroup[] = [];
+    const used = new Set<number>();
+    for (let i = 0; i < workerNames.length; i++) {
+      if (used.has(i)) continue;
+      const group: string[] = [workerNames[i]];
+      for (let j = i + 1; j < workerNames.length; j++) {
+        if (used.has(j)) continue;
+        if (areSimilar(workerNames[i], workerNames[j])) {
+          group.push(workerNames[j]);
+          used.add(j);
+        }
+      }
+      if (group.length > 1) { used.add(i); groups.push({ names: group }); }
+    }
+    return groups;
+  }, [workerLedgers]);
+
+  const handleMerge = async (names: string[], keepName: string) => {
+    for (const name of names.filter(n => n !== keepName)) {
+      const { error } = await supabase.from("staff_ledger").update({ worker_name: keepName }).ilike("worker_name", name);
+      if (error) { toast.error(`Error merging "${name}": ${error.message}`); return; }
+    }
+    toast.success(`Sab entries "${keepName}" mein merge ho gayin! ✅`);
+    fetchAll();
+  };
 
   const filtered = useMemo(() =>
     workerLedgers.filter(w =>
@@ -152,13 +210,14 @@ const AdminStaffLedger = () => {
         amount: addForm.amount,
         transaction_type: addForm.transaction_type,
         description: addForm.description.trim(),
+        transaction_date: addForm.transaction_date,
         status: "approved",
         created_by: user?.id,
       });
       if (error) { toast.error(`Add error: ${error.message}`); return; }
       toast.success("Staff entry add ho gayi! ✅");
       setAddDialog(false);
-      setAddForm({ worker_name: "", amount: 0, transaction_type: "advance", description: "" });
+      setAddForm({ worker_name: "", amount: 0, transaction_type: "advance", description: "", transaction_date: new Date().toISOString().split("T")[0] });
       fetchAll();
     } catch (err) {
       console.error("Add entry exception:", err);
@@ -175,6 +234,7 @@ const AdminStaffLedger = () => {
       transaction_type: entry.transaction_type,
       description: entry.description,
       status: entry.status,
+      transaction_date: entry.transaction_date || new Date().toISOString().split("T")[0],
     });
     setEditDialog(true);
   };
@@ -188,6 +248,7 @@ const AdminStaffLedger = () => {
         amount: editForm.amount,
         transaction_type: editForm.transaction_type,
         description: editForm.description.trim(),
+        transaction_date: editForm.transaction_date,
       }).eq("id", editForm.id);
       if (error) { toast.error(`Update error: ${error.message}`); return; }
       toast.success("Entry update ho gayi! ✅");
@@ -259,7 +320,7 @@ const AdminStaffLedger = () => {
                   </div>
                   <div className="text-2xl font-bold font-display text-amber-600">{formatRs(entry.amount)}</div>
                   {entry.description && <p className="text-sm text-muted-foreground">📝 {entry.description}</p>}
-                  <p className="text-xs text-muted-foreground">{new Date(entry.created_at).toLocaleString("en-PK", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+                  <p className="text-xs text-muted-foreground">📅 {new Date(entry.transaction_date || entry.created_at).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}</p>
 
                   <div className="flex gap-2 pt-2">
                     <Button size="lg" className="flex-1 h-11 rounded-xl font-semibold" onClick={() => handleApprove(entry)}>
@@ -276,6 +337,38 @@ const AdminStaffLedger = () => {
               </Card>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Similar Names Warning */}
+      {similarWarnings.length > 0 && (
+        <div className="space-y-3">
+          {similarWarnings.map((group, idx) => (
+            <Card key={idx} className="rounded-2xl border-2 border-warning bg-warning/5">
+              <CardContent className="pt-5 pb-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-6 w-6 text-warning shrink-0 mt-0.5" />
+                  <div className="flex-1 space-y-3">
+                    <div>
+                      <p className="font-display font-bold text-base">⚠️ Milte julte worker names!</p>
+                      <p className="text-sm text-muted-foreground">Ye workers ka naam almost same hai — merge karein?</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {group.names.map(name => (<Badge key={name} variant="outline" className="text-sm px-3 py-1.5 font-mono">"{name}"</Badge>))}
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <span className="text-sm text-muted-foreground font-medium self-center mr-1">Sahi naam:</span>
+                      {group.names.map(name => (
+                        <Button key={name} size="sm" variant="outline" className="rounded-xl font-semibold gap-1.5" onClick={() => handleMerge(group.names, name)}>
+                          <Merge className="h-3.5 w-3.5" /> "{name}" rakhein
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
 
@@ -320,7 +413,7 @@ const AdminStaffLedger = () => {
                     <table className="w-full text-[15px]">
                       <thead className="bg-muted/30">
                         <tr>
-                          <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Date</th>
+                          <th className="px-5 py-3 text-left font-semibold text-muted-foreground">📅 Date</th>
                           <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Type</th>
                           <th className="px-5 py-3 text-left font-semibold text-muted-foreground">Description</th>
                           <th className="px-5 py-3 text-right font-semibold text-muted-foreground">Amount</th>
@@ -331,7 +424,7 @@ const AdminStaffLedger = () => {
                         {worker.entries.map(entry => (
                           <tr key={entry.id} className="border-t border-border hover:bg-muted/20 transition-colors">
                             <td className="px-5 py-3 text-sm text-muted-foreground whitespace-nowrap">
-                              {new Date(entry.created_at).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}
+                              {new Date(entry.transaction_date || entry.created_at).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}
                             </td>
                             <td className="px-5 py-3">
                               <Badge variant="outline" className="text-xs">{TRANSACTION_LABELS[entry.transaction_type] || entry.transaction_type}</Badge>
@@ -357,7 +450,7 @@ const AdminStaffLedger = () => {
       )}
 
       {/* ADD DIALOG */}
-      <Dialog open={addDialog} onOpenChange={o => { setAddDialog(o); if (!o) setAddForm({ worker_name: "", amount: 0, transaction_type: "advance", description: "" }); }}>
+      <Dialog open={addDialog} onOpenChange={o => { setAddDialog(o); if (!o) setAddForm({ worker_name: "", amount: 0, transaction_type: "advance", description: "", transaction_date: new Date().toISOString().split("T")[0] }); }}>
         <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader><DialogTitle className="text-xl">➕ Nayi Staff Entry</DialogTitle></DialogHeader>
           <div className="space-y-4">
@@ -379,9 +472,15 @@ const AdminStaffLedger = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label className="font-semibold">Amount (Rs) *</Label>
-              <Input type="number" min={0} value={addForm.amount || ""} onChange={e => setAddForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))} className="h-11 rounded-xl" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="font-semibold">Amount (Rs) *</Label>
+                <Input type="number" min={0} value={addForm.amount || ""} onChange={e => setAddForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))} className="h-11 rounded-xl" />
+              </div>
+              <div className="space-y-2">
+                <Label className="font-semibold">📅 Date</Label>
+                <Input type="date" value={addForm.transaction_date} onChange={e => setAddForm(p => ({ ...p, transaction_date: e.target.value }))} className="h-11 rounded-xl" />
+              </div>
             </div>
             <div className="space-y-2">
               <Label className="font-semibold">Description / Wajah</Label>
@@ -415,9 +514,15 @@ const AdminStaffLedger = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label className="font-semibold">Amount (Rs) *</Label>
-              <Input type="number" min={0} value={editForm.amount || ""} onChange={e => setEditForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))} className="h-11 rounded-xl" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="font-semibold">Amount (Rs) *</Label>
+                <Input type="number" min={0} value={editForm.amount || ""} onChange={e => setEditForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))} className="h-11 rounded-xl" />
+              </div>
+              <div className="space-y-2">
+                <Label className="font-semibold">📅 Date</Label>
+                <Input type="date" value={editForm.transaction_date} onChange={e => setEditForm(p => ({ ...p, transaction_date: e.target.value }))} className="h-11 rounded-xl" />
+              </div>
             </div>
             <div className="space-y-2">
               <Label className="font-semibold">Description / Wajah</Label>

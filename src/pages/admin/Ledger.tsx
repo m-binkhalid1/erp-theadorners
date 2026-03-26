@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import {
   Search, Loader2, ChevronDown, ChevronRight,
-  AlertTriangle, Merge, CheckCircle2, Plus, Pencil, Trash2, Tag
+  AlertTriangle, Merge, CheckCircle2, Plus, Pencil, Trash2, Tag, Sparkles, Check, X
 } from "lucide-react";
 
 function levenshtein(a: string, b: string): number {
@@ -151,6 +151,12 @@ const AdminLedger = () => {
       .sort((a, b) => b.remaining - a.remaining);
   }, [invoices]);
 
+  // AI Pending company payments
+  const pendingPayments = useMemo(() =>
+    invoices.filter(i => i.status === "pending_ai"),
+    [invoices]
+  );
+
   const similarWarnings = useMemo<SimilarGroup[]>(() => {
     const companyNames = ledger.map(l => l.company);
     const groups: SimilarGroup[] = [];
@@ -196,6 +202,19 @@ const AdminLedger = () => {
     remaining: ledger.reduce((s, l) => s + l.remaining, 0),
     companies: ledger.length,
   }), [ledger]);
+
+  // ── Approve / Reject AI Payment ──
+  const handleApprovePayment = async (inv: InvoiceRow) => {
+    const { error } = await supabase.from("invoices").update({ status: inv.paid >= inv.total ? "paid" : inv.paid > 0 ? "partial" : "pending" }).eq("id", inv.id);
+    if (error) toast.error(error.message);
+    else { toast.success(`Payment approve ho gaya! ✅`); fetchAll(); }
+  };
+
+  const handleRejectPayment = async (id: string) => {
+    const { error } = await supabase.from("invoices").delete().eq("id", id);
+    if (error) toast.error(error.message);
+    else { toast.success("Payment reject & delete ho gaya"); fetchAll(); }
+  };
 
   const handleRecordPayment = async () => {
     if (payAmount <= 0) { toast.error("Sahi amount daalein"); return; }
@@ -350,6 +369,47 @@ const AdminLedger = () => {
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
         <Input placeholder="Search client/company/label..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-12 h-12 rounded-xl text-base" />
       </div>
+
+      {/* AI Pending Company Payments */}
+      {pendingPayments.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🤖</span>
+            <h2 className="text-lg sm:text-xl font-display font-bold">AI Payments — Review Karein</h2>
+            <Badge variant="secondary" className="text-sm px-3">{pendingPayments.length}</Badge>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pendingPayments.map(inv => (
+              <Card key={inv.id} className="border-green-500/20 bg-green-500/5 rounded-2xl overflow-hidden">
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-display font-bold text-lg">{inv.company || inv.client_name}</p>
+                      <p className="text-sm text-muted-foreground">{inv.ledger_label || "Payment Received"}</p>
+                    </div>
+                    <Badge variant="outline" className="text-xs gap-1 border-primary/30 text-primary">
+                      <Sparkles className="h-3 w-3" /> AI
+                    </Badge>
+                  </div>
+                  <div className="text-2xl font-bold font-display text-green-600">{formatRs(inv.paid)}</div>
+                  <p className="text-xs text-muted-foreground">{new Date(inv.created_at).toLocaleString("en-PK", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+                  <div className="flex gap-2 pt-2">
+                    <Button size="lg" className="flex-1 h-11 rounded-xl font-semibold" onClick={() => handleApprovePayment(inv)}>
+                      <Check className="h-4 w-4 mr-1" /> Approve ✅
+                    </Button>
+                    <Button size="lg" variant="outline" className="h-11 rounded-xl" onClick={() => openEditDialog(inv)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button size="lg" variant="ghost" className="h-11 rounded-xl text-destructive" onClick={() => handleRejectPayment(inv.id)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Similar Names Warning */}
       {similarWarnings.length > 0 && (

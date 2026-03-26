@@ -29,15 +29,18 @@ const AdminSidebar = ({ onNavigate }: AdminSidebarProps) => {
   const { signOut, profile } = useAuth();
   const [pendingAiCount, setPendingAiCount] = useState(0);
   const [pendingStaffCount, setPendingStaffCount] = useState(0);
+  const [pendingPaymentCount, setPendingPaymentCount] = useState(0);
 
   useEffect(() => {
     const fetchPending = async () => {
-      const [evtRes, staffRes] = await Promise.all([
+      const [evtRes, staffRes, payRes] = await Promise.all([
         supabase.from("events").select("*", { count: "exact", head: true }).eq("status", "pending_ai"),
         supabase.from("staff_ledger").select("*", { count: "exact", head: true }).eq("status", "pending_ai"),
+        supabase.from("invoices").select("*", { count: "exact", head: true }).eq("status", "pending_ai"),
       ]);
       setPendingAiCount(evtRes.count ?? 0);
       setPendingStaffCount(staffRes.count ?? 0);
+      setPendingPaymentCount(payRes.count ?? 0);
     };
     fetchPending();
 
@@ -45,6 +48,7 @@ const AdminSidebar = ({ onNavigate }: AdminSidebarProps) => {
       .channel("ai-events-sidebar")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => fetchPending())
       .on("postgres_changes", { event: "*", schema: "public", table: "staff_ledger" }, () => fetchPending())
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => fetchPending())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -94,6 +98,7 @@ const AdminSidebar = ({ onNavigate }: AdminSidebarProps) => {
           const isActive = location.pathname === item.path;
           const showBadge = item.path === "/admin/events" && pendingAiCount > 0;
           const showStaffBadge = item.path === "/admin/staff-ledger" && pendingStaffCount > 0;
+          const showPayBadge = item.path === "/admin/ledger" && pendingPaymentCount > 0;
           return (
             <button
               key={item.path}
@@ -115,6 +120,11 @@ const AdminSidebar = ({ onNavigate }: AdminSidebarProps) => {
               {showStaffBadge && (
                 <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-amber-500/20 text-amber-300 px-1.5 text-[11px] font-bold">
                   {pendingStaffCount}
+                </span>
+              )}
+              {showPayBadge && (
+                <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-green-500/20 text-green-300 px-1.5 text-[11px] font-bold">
+                  {pendingPaymentCount}
                 </span>
               )}
             </button>

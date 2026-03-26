@@ -6,6 +6,73 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ── Tool Definitions ──
+const TOOL_EVENT = {
+  type: "function",
+  function: {
+    name: "extract_event",
+    description: "Extract event details from a chat message or indicate it's not an event.",
+    parameters: {
+      type: "object",
+      properties: {
+        is_event: { type: "boolean", description: "Whether this message describes an event" },
+        client_name: { type: "string", description: "Contact person name — who we deal with (e.g. Anthony, Ali)" },
+        coordinator_company: { type: "string", description: "Event management company organizing it (e.g. Ignite Events)" },
+        event_of_company: { type: "string", description: "End client company whose event this is (e.g. Food Panda)" },
+        event_place: { type: "string", description: "Event venue/location" },
+        phone_no: { type: "string", description: "Client phone number" },
+        date: { type: "string", description: "Event date in YYYY-MM-DD format" },
+        items: {
+          type: "array", description: "Items needed for the event",
+          items: { type: "object", properties: { description: { type: "string" }, qty: { type: "number" }, unit_price: { type: "number" } } },
+        },
+        employees: { type: "string", description: "Assigned employees" },
+        details: { type: "string", description: "Other event details" },
+      },
+      required: ["is_event"], additionalProperties: false,
+    },
+  },
+};
+
+const TOOL_STAFF = {
+  type: "function",
+  function: {
+    name: "extract_staff_payment",
+    description: "Extract staff/employee payment details from a chat message.",
+    parameters: {
+      type: "object",
+      properties: {
+        is_staff_payment: { type: "boolean", description: "Whether this message describes a staff payment/expense" },
+        staff_name: { type: "string", description: "Name of the worker/employee" },
+        staff_amount: { type: "number", description: "Amount in PKR" },
+        staff_reason: { type: "string", description: "Reason for the payment" },
+        staff_type: { type: "string", enum: ["advance", "salary", "daily_wage", "expense", "event_expense", "other"], description: "Type of payment" },
+        staff_date: { type: "string", description: "Date when money was given, in YYYY-MM-DD format" },
+      },
+      required: ["is_staff_payment"], additionalProperties: false,
+    },
+  },
+};
+
+const TOOL_COMPANY_PAYMENT = {
+  type: "function",
+  function: {
+    name: "extract_company_payment",
+    description: "Extract client/company cheque or payment received details from a chat message.",
+    parameters: {
+      type: "object",
+      properties: {
+        is_company_payment: { type: "boolean", description: "Whether this message describes a company/client payment received" },
+        company_name: { type: "string", description: "Company or client name who made the payment" },
+        payment_amount: { type: "number", description: "Amount received in PKR" },
+        payment_method: { type: "string", description: "e.g. cheque, cash, bank transfer" },
+        payment_description: { type: "string", description: "Any additional details about the payment" },
+      },
+      required: ["is_company_payment"], additionalProperties: false,
+    },
+  },
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -21,7 +88,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Verify user
     const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -31,16 +97,28 @@ serve(async (req) => {
     }
     const userId = claimsData.claims.sub;
 
-    const { message, messageId } = await req.json();
+    const { message, messageId, expectedType } = await req.json();
     if (!message || !messageId) throw new Error("Missing message or messageId");
 
-    // Use tool calling to extract structured event data OR staff ledger entry
+    // ── Select tools based on expectedType ──
+    let tools: any[];
+    let systemExtra = "";
+    if (expectedType === "event") {
+      tools = [TOOL_EVENT];
+      systemExtra = "\n\nIMPORTANT: The user has explicitly selected EVENT mode. You MUST use the extract_event tool. Treat this message as an event description.";
+    } else if (expectedType === "staff") {
+      tools = [TOOL_STAFF];
+      systemExtra = "\n\nIMPORTANT: The user has explicitly selected STAFF PAYMENT mode. You MUST use the extract_staff_payment tool. Treat this message as a staff/employee payment.";
+    } else if (expectedType === "company_payment") {
+      tools = [TOOL_COMPANY_PAYMENT];
+      systemExtra = "\n\nIMPORTANT: The user has explicitly selected COMPANY PAYMENT mode. You MUST use the extract_company_payment tool. Treat this message as a company/client cheque or payment received.";
+    } else {
+      tools = [TOOL_EVENT, TOOL_STAFF, TOOL_COMPANY_PAYMENT];
+    }
+
     const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${GEMINI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gemini-2.5-flash",
         messages: [
@@ -48,20 +126,21 @@ serve(async (req) => {
             role: "system",
             content: `You are a smart assistant for "The Adorners", a balloon decoration & event management company in Lahore, Pakistan.
 
-Your job is to analyze employee chat messages and determine if they describe:
-1. An EVENT booking/details, OR
-2. A STAFF PAYMENT/EXPENSE (employee ne paise liye, advance, salary, dihari, kharcha etc.), OR
-3. Neither (just a normal chat message)
+Your job is to analyze employee chat messages and determine the message type:
+1. An EVENT booking/details
+2. A STAFF PAYMENT/EXPENSE (employee ne paise liye, advance, salary, dihari, kharcha etc.)
+3. A COMPANY PAYMENT RECEIVED (client/company se cheque ya payment mili)
+4. Neither (just a normal chat message)
 
 ## EVENT EXTRACTION
 Extract these fields for events:
-- client_name: The CONTACT PERSON who is coordinating with us (e.g. "Anthony", "Ali", "Moen")
-- coordinator_company: The EVENT MANAGEMENT COMPANY organizing it (optional, e.g. "Ignite Events")
-- event_of_company: The END CLIENT COMPANY whose event this is (optional, e.g. "Food Panda")
+- client_name: The CONTACT PERSON (e.g. "Anthony", "Ali", "Moen")
+- coordinator_company: The EVENT MANAGEMENT COMPANY organizing it (optional)
+- event_of_company: The END CLIENT COMPANY whose event this is (optional)
 - event_place: Where the event is happening
 - phone_no: Client phone number (Pakistani format)
 - date: Event date (ISO format YYYY-MM-DD)
-- items: Array of items needed. Each item: description (string), qty (number), unit_price (number)
+- items: Array of items. Each item: description, qty, unit_price
 - employees: Which employees are going
 - details: Any other event details
 
@@ -71,80 +150,38 @@ IMPORTANT DISTINCTION:
 - event_of_company = whose event it actually IS
 
 ## STAFF PAYMENT EXTRACTION
-If the message talks about giving money to an employee/worker, extract:
+If the message talks about giving money to an employee/worker:
 - staff_name: Name of the worker/employee who received money
 - staff_amount: Amount in PKR
-- staff_reason: Why were they given money (advance, salary, daily wage, event expense, personal need, etc.)
+- staff_reason: Why were they given money
 - staff_type: One of: "advance", "salary", "daily_wage", "expense", "event_expense", "other"
+- staff_date: Date when the money was given (YYYY-MM-DD). Default to today if not mentioned.
 
-Examples of staff payment messages:
+Examples:
 - "Ali ko 5000 diye advance" → staff payment
 - "Usman ki aaj ki dihari 2000 de do" → staff payment (daily_wage)
 - "Bilal ne event k kharche k liye 3000 liye" → staff payment (event_expense)
 - "Ahmed ki March salary 25000 di" → staff payment (salary)
-- "falan bande ne itne paise liye" → staff payment
+- "ghazi ne 25 march 2026 ko food panda ka event pr 500 lia khana ka lia" → staff payment (event_expense), staff_date = 2025-03-25
+
+## COMPANY PAYMENT RECEIVED
+If the message talks about receiving money FROM a company/client:
+- company_name: Name of the company or client who paid
+- payment_amount: Amount received in PKR
+- payment_method: How they paid (cheque, cash, bank transfer)
+- payment_description: Any extra details
+
+Examples:
+- "Cloud 9 se 10000 ka cheque mil gaya" → company payment
+- "Ignite Events ne 50000 transfer kiye" → company payment
+- "Anthony ne 20000 cash diye hain" → company payment
 
 For dates: if they say "kal" or "tomorrow" assume the next day from today. "Aaj" means today.
-Today's date is: ${new Date().toISOString().split("T")[0]}`
+Today's date is: ${new Date().toISOString().split("T")[0]}${systemExtra}`
           },
           { role: "user", content: message }
         ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "extract_event",
-              description: "Extract event details from a chat message or indicate it's not an event.",
-              parameters: {
-                type: "object",
-                properties: {
-                  is_event: { type: "boolean", description: "Whether this message describes an event" },
-                  client_name: { type: "string", description: "Contact person name — who we deal with (e.g. Anthony, Ali)" },
-                  coordinator_company: { type: "string", description: "Event management company organizing it (e.g. Ignite Events)" },
-                  event_of_company: { type: "string", description: "End client company whose event this is (e.g. Food Panda)" },
-                  event_place: { type: "string", description: "Event venue/location" },
-                  phone_no: { type: "string", description: "Client phone number" },
-                  date: { type: "string", description: "Event date in YYYY-MM-DD format" },
-                  items: {
-                    type: "array",
-                    description: "Items needed for the event",
-                    items: {
-                      type: "object",
-                      properties: {
-                        description: { type: "string", description: "Item name (e.g. Balloons, Danglers, Flowers)" },
-                        qty: { type: "number", description: "Quantity" },
-                        unit_price: { type: "number", description: "Price per unit" },
-                      },
-                    },
-                  },
-                  employees: { type: "string", description: "Assigned employees" },
-                  details: { type: "string", description: "Other event details" },
-                },
-                required: ["is_event"],
-                additionalProperties: false,
-              },
-            },
-          },
-          {
-            type: "function",
-            function: {
-              name: "extract_staff_payment",
-              description: "Extract staff/employee payment details from a chat message.",
-              parameters: {
-                type: "object",
-                properties: {
-                  is_staff_payment: { type: "boolean", description: "Whether this message describes a staff payment/expense" },
-                  staff_name: { type: "string", description: "Name of the worker/employee" },
-                  staff_amount: { type: "number", description: "Amount in PKR" },
-                  staff_reason: { type: "string", description: "Reason for the payment" },
-                  staff_type: { type: "string", enum: ["advance", "salary", "daily_wage", "expense", "event_expense", "other"], description: "Type of payment" },
-                },
-                required: ["is_staff_payment"],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
+        tools,
       }),
     });
 
@@ -174,11 +211,13 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
     // STAFF PAYMENT PATH
     // ──────────────────────────────────────────
     if (fnName === "extract_staff_payment" && extracted.is_staff_payment) {
+      const txDate = extracted.staff_date || new Date().toISOString().split("T")[0];
       const { data: staffData, error: staffError } = await adminClient.from("staff_ledger").insert({
         worker_name: (extracted.staff_name || "Unknown").trim(),
         amount: extracted.staff_amount || 0,
         transaction_type: extracted.staff_type || "other",
         description: (extracted.staff_reason || "").trim(),
+        transaction_date: txDate,
         status: "pending_ai",
         created_by: userId,
       }).select("id").single();
@@ -188,41 +227,70 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
         throw new Error("Failed to create staff ledger entry");
       }
 
-      // Mark chat message
       await adminClient.from("chat_messages").update({
         is_ai_processed: true,
         ai_staff_ledger_id: staffData.id,
       }).eq("id", messageId);
 
       return new Response(JSON.stringify({
-        is_event: false,
-        is_staff_payment: true,
-        staff_ledger_id: staffData.id,
-        extracted,
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+        is_event: false, is_staff_payment: true, is_company_payment: false,
+        staff_ledger_id: staffData.id, extracted,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ──────────────────────────────────────────
+    // COMPANY PAYMENT PATH
+    // ──────────────────────────────────────────
+    if (fnName === "extract_company_payment" && extracted.is_company_payment) {
+      const companyName = (extracted.company_name || "Unknown").trim();
+      const paymentAmount = extracted.payment_amount || 0;
+      const desc = [
+        extracted.payment_method ? `Via ${extracted.payment_method}` : "",
+        extracted.payment_description || "",
+      ].filter(Boolean).join(" — ");
+
+      // Create an invoice entry with total=0 and paid=paymentAmount
+      // This will ADD to the company's "paid" column and reduce the remaining balance
+      const { data: invData, error: invError } = await adminClient.from("invoices").insert({
+        company: companyName,
+        client_name: companyName,
+        ledger_label: `💰 Payment Received${desc ? ` — ${desc}` : ""}`,
+        total: 0,
+        paid: paymentAmount,
+        status: "pending_ai",
+        items: [{ description: `Payment received: ${desc || "Cheque/Cash"}`, qty: 1, unit_price: 0, subtotal: 0 }],
+      }).select("id").single();
+
+      if (invError) {
+        console.error("Company payment creation error:", invError);
+        throw new Error("Failed to create company payment entry");
+      }
+
+      await adminClient.from("chat_messages").update({
+        is_ai_processed: true,
+        ai_event_id: invData.id,
+      }).eq("id", messageId);
+
+      return new Response(JSON.stringify({
+        is_event: false, is_staff_payment: false, is_company_payment: true,
+        invoice_id: invData.id, extracted,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // ──────────────────────────────────────────
     // EVENT PATH
     // ──────────────────────────────────────────
     if (fnName === "extract_event" && extracted.is_event) {
-      // Build event_items from extracted items
       const eventItems = (extracted.items || []).map((i: any) => ({
         description: i.description || "",
-        qty: i.qty || 0,
-        unit_price: i.unit_price || 0,
+        qty: i.qty || 0, unit_price: i.unit_price || 0,
         subtotal: (i.qty || 0) * (i.unit_price || 0),
       }));
       const totalAmount = eventItems.reduce((s: number, i: any) => s + i.subtotal, 0);
 
-      const clientName = (extracted.client_name || "Unknown").trim();
-      const eventOfCompany = (extracted.event_of_company || "").trim();
-
       const { data: eventData, error: eventError } = await adminClient.from("events").insert({
-        company: eventOfCompany,
-        client_name: clientName,
+        company: (extracted.event_of_company || "").trim(),
+        client_name: (extracted.client_name || "Unknown").trim(),
         coordinator_company: (extracted.coordinator_company || "").trim(),
         coordinator_name: "",
         event_place: (extracted.event_place || "TBD").trim(),
@@ -243,34 +311,28 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
         throw new Error("Failed to create event");
       }
 
-      // Mark chat message as AI processed
       await adminClient.from("chat_messages").update({
         is_ai_processed: true,
         ai_event_id: eventData.id,
       }).eq("id", messageId);
 
       return new Response(JSON.stringify({
-        is_event: true,
-        is_staff_payment: false,
-        event_id: eventData.id,
-        extracted,
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+        is_event: true, is_staff_payment: false, is_company_payment: false,
+        event_id: eventData.id, extracted,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // ──────────────────────────────────────────
-    // NEITHER EVENT NOR STAFF PAYMENT
+    // NEITHER
     // ──────────────────────────────────────────
-    return new Response(JSON.stringify({ is_event: false, is_staff_payment: false }), {
+    return new Response(JSON.stringify({ is_event: false, is_staff_payment: false, is_company_payment: false }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
   } catch (e) {
     console.error("extract-event error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

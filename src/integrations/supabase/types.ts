@@ -344,6 +344,7 @@ export type Database = {
           event_id: string | null
           status: string
           created_by: string | null
+          transaction_date: string
           created_at: string
           updated_at: string
         }
@@ -356,6 +357,7 @@ export type Database = {
           event_id?: string | null
           status?: string
           created_by?: string | null
+          transaction_date?: string
           created_at?: string
           updated_at?: string
         }
@@ -368,6 +370,7 @@ export type Database = {
           event_id?: string | null
           status?: string
           created_by?: string | null
+          transaction_date?: string
           created_at?: string
           updated_at?: string
         }

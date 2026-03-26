@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Loader2, Sparkles, CalendarPlus, ExternalLink, Trash2, CheckCircle2, Circle, X, Wallet } from "lucide-react";
+import { Send, Loader2, Sparkles, CalendarPlus, ExternalLink, Trash2, CheckCircle2, Circle, X, Wallet, BookOpen, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,7 @@ const AdminChat = () => {
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [aiMode, setAiMode] = useState<"auto" | "event" | "staff" | "company_payment">("auto");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -133,7 +134,7 @@ const AdminChat = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ message: content, messageId }),
+        body: JSON.stringify({ message: content, messageId, expectedType: aiMode === "auto" ? undefined : aiMode }),
       });
 
       if (resp.status === 429) { toast.error("AI rate limited, try again later"); return; }
@@ -150,6 +151,11 @@ const AdminChat = () => {
         toast.success("💰 AI ne staff payment detect ki!", {
           description: `${result.extracted.staff_name}: Rs ${(result.extracted.staff_amount || 0).toLocaleString()} — ${result.extracted.staff_reason || result.extracted.staff_type}`,
           action: { label: "Staff Ledger", onClick: () => navigate("/admin/staff-ledger") },
+        });
+      } else if (result.is_company_payment) {
+        toast.success("🧾 Company payment detect hua!", {
+          description: `${result.extracted.company_name}: Rs ${(result.extracted.payment_amount || 0).toLocaleString()} wusool`,
+          action: { label: "Ledger Dekhein", onClick: () => navigate("/admin/ledger") },
         });
       }
     } catch (err) {
@@ -375,7 +381,7 @@ const AdminChat = () => {
         </div>
       )}
 
-      {/* Input - WhatsApp style */}
+      {/* Input - WhatsApp style with AI Mode Selector */}
       <form onSubmit={sendMessage} className="border-t border-border px-2 py-2 flex items-end gap-1.5 safe-bottom shrink-0 bg-card">
         <ChatAttachmentMenu 
           onFileSelected={setAttachedFile} 
@@ -384,11 +390,26 @@ const AdminChat = () => {
           }}
           disabled={sending} 
         />
+        {/* AI Mode Selector */}
+        <div className="relative shrink-0">
+          <select
+            value={aiMode}
+            onChange={(e) => setAiMode(e.target.value as any)}
+            className="h-11 pl-2 pr-6 text-xs rounded-full border border-border bg-card appearance-none cursor-pointer font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+            disabled={sending}
+          >
+            <option value="auto">🤖 Auto</option>
+            <option value="event">📅 Event</option>
+            <option value="staff">👷 Staff</option>
+            <option value="company_payment">🏢 Payment</option>
+          </select>
+          <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+        </div>
         <div className="flex-1 relative">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Message likhein..."
+            placeholder={aiMode === "auto" ? "Message likhein..." : aiMode === "event" ? "Event details likhein..." : aiMode === "staff" ? "Staff payment likhein..." : "Company payment likhein..."}
             className="flex-1 h-11 text-sm rounded-full pr-4 pl-4 border-border"
             disabled={sending}
           />
