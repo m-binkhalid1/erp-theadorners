@@ -17,6 +17,7 @@ export type Database = {
       chat_messages: {
         Row: {
           ai_event_id: string | null
+          ai_staff_ledger_id: string | null
           content: string
           created_at: string
           file_name: string | null
@@ -29,6 +30,7 @@ export type Database = {
         }
         Insert: {
           ai_event_id?: string | null
+          ai_staff_ledger_id?: string | null
           content: string
           created_at?: string
           file_name?: string | null
@@ -41,6 +43,7 @@ export type Database = {
         }
         Update: {
           ai_event_id?: string | null
+          ai_staff_ledger_id?: string | null
           content?: string
           created_at?: string
           file_name?: string | null
@@ -57,6 +60,13 @@ export type Database = {
             columns: ["ai_event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_messages_ai_staff_ledger_id_fkey"
+            columns: ["ai_staff_ledger_id"]
+            isOneToOne: false
+            referencedRelation: "staff_ledger"
             referencedColumns: ["id"]
           },
         ]
@@ -323,6 +333,53 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      staff_ledger: {
+        Row: {
+          id: string
+          worker_name: string
+          amount: number
+          transaction_type: string
+          description: string
+          event_id: string | null
+          status: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          worker_name: string
+          amount: number
+          transaction_type?: string
+          description?: string
+          event_id?: string | null
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          worker_name?: string
+          amount?: number
+          transaction_type?: string
+          description?: string
+          event_id?: string | null
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_ledger_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

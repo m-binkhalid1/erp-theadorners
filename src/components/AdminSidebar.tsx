@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   CalendarDays, Package, FileText, BookOpen, MessageCircle,
-  ClipboardList, LogOut, PartyPopper, Users, Bell, Sparkles,
+  ClipboardList, LogOut, PartyPopper, Users, Bell, Sparkles, Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const navItems = [
   { label: "Inventory", icon: Package, path: "/admin/inventory", emoji: "📦" },
   { label: "Invoice", icon: FileText, path: "/admin/invoice", emoji: "🧾" },
   { label: "Ledger", icon: BookOpen, path: "/admin/ledger", emoji: "📒" },
+  { label: "Staff Ledger", icon: Wallet, path: "/admin/staff-ledger", emoji: "📓" },
   { label: "Chat", icon: MessageCircle, path: "/admin/chat", emoji: "💬" },
   { label: "Tasks", icon: ClipboardList, path: "/admin/tasks", emoji: "✅" },
   { label: "Team", icon: Users, path: "/admin/employees", emoji: "👥" },
@@ -27,20 +28,23 @@ const AdminSidebar = ({ onNavigate }: AdminSidebarProps) => {
   const location = useLocation();
   const { signOut, profile } = useAuth();
   const [pendingAiCount, setPendingAiCount] = useState(0);
+  const [pendingStaffCount, setPendingStaffCount] = useState(0);
 
   useEffect(() => {
     const fetchPending = async () => {
-      const { count } = await supabase
-        .from("events")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "pending_ai");
-      setPendingAiCount(count ?? 0);
+      const [evtRes, staffRes] = await Promise.all([
+        supabase.from("events").select("*", { count: "exact", head: true }).eq("status", "pending_ai"),
+        supabase.from("staff_ledger").select("*", { count: "exact", head: true }).eq("status", "pending_ai"),
+      ]);
+      setPendingAiCount(evtRes.count ?? 0);
+      setPendingStaffCount(staffRes.count ?? 0);
     };
     fetchPending();
 
     const channel = supabase
       .channel("ai-events-sidebar")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => fetchPending())
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_ledger" }, () => fetchPending())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -89,6 +93,7 @@ const AdminSidebar = ({ onNavigate }: AdminSidebarProps) => {
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           const showBadge = item.path === "/admin/events" && pendingAiCount > 0;
+          const showStaffBadge = item.path === "/admin/staff-ledger" && pendingStaffCount > 0;
           return (
             <button
               key={item.path}
@@ -105,6 +110,11 @@ const AdminSidebar = ({ onNavigate }: AdminSidebarProps) => {
               {showBadge && (
                 <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-sidebar-primary-foreground/20 px-1.5 text-[11px] font-bold">
                   {pendingAiCount}
+                </span>
+              )}
+              {showStaffBadge && (
+                <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-amber-500/20 text-amber-300 px-1.5 text-[11px] font-bold">
+                  {pendingStaffCount}
                 </span>
               )}
             </button>

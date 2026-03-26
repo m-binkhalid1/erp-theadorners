@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Loader2, Sparkles, CalendarPlus, ExternalLink, Trash2, CheckCircle2, Circle, X } from "lucide-react";
+import { Send, Loader2, Sparkles, CalendarPlus, ExternalLink, Trash2, CheckCircle2, Circle, X, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ interface ChatMessage {
   message_type: string;
   is_ai_processed: boolean;
   ai_event_id: string | null;
+  ai_staff_ledger_id: string | null;
   file_url: string | null;
   file_type: string | null;
   file_name: string | null;
@@ -142,8 +143,13 @@ const AdminChat = () => {
       const result = await resp.json();
       if (result.is_event) {
         toast.success("🎉 AI ne event detect kar liya!", {
-          description: `Company: ${result.extracted.company || "Unknown"}`,
+          description: `Company: ${result.extracted.company || result.extracted.client_name || "Unknown"}`,
           action: { label: "Events Dekhein", onClick: () => navigate("/admin/events") },
+        });
+      } else if (result.is_staff_payment) {
+        toast.success("💰 AI ne staff payment detect ki!", {
+          description: `${result.extracted.staff_name}: Rs ${(result.extracted.staff_amount || 0).toLocaleString()} — ${result.extracted.staff_reason || result.extracted.staff_type}`,
+          action: { label: "Staff Ledger", onClick: () => navigate("/admin/staff-ledger") },
         });
       }
     } catch (err) {
@@ -338,6 +344,15 @@ const AdminChat = () => {
                   <button onClick={(e) => { e.stopPropagation(); navigate("/admin/events"); }} className="flex items-center gap-1.5 mt-1.5 group">
                     <Badge variant="outline" className="gap-1 border-primary/30 text-primary group-hover:bg-primary/10 transition-colors cursor-pointer text-xs">
                       <CalendarPlus className="h-3 w-3" /> Event ✅
+                      <ExternalLink className="h-2.5 w-2.5" />
+                    </Badge>
+                  </button>
+                )}
+
+                {msg.is_ai_processed && msg.ai_staff_ledger_id && !isDeleted && (
+                  <button onClick={(e) => { e.stopPropagation(); navigate("/admin/staff-ledger"); }} className="flex items-center gap-1.5 mt-1.5 group">
+                    <Badge variant="outline" className="gap-1 border-amber-500/30 text-amber-600 group-hover:bg-amber-500/10 transition-colors cursor-pointer text-xs">
+                      <Wallet className="h-3 w-3" /> Staff Payment 💰
                       <ExternalLink className="h-2.5 w-2.5" />
                     </Badge>
                   </button>

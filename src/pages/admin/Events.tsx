@@ -452,6 +452,8 @@ const AdminEvents = () => {
                   {getItemsSummary(event) !== "—" && <p className="text-sm"><span className="text-muted-foreground">📦</span> {getItemsSummary(event)}</p>}
                   {event.total_amount > 0 && <p className="text-sm font-bold text-primary">💰 Rs {event.total_amount.toLocaleString()}</p>}
                   {event.employees && <p className="text-sm"><span className="text-muted-foreground">👥</span> {event.employees}</p>}
+                  {event.coordinator_company && <p className="text-sm"><span className="text-muted-foreground">🏗️</span> Coordinator: <span className="font-medium">{event.coordinator_company}</span></p>}
+                  {event.company && <p className="text-sm"><span className="text-muted-foreground">🏢</span> Company: <span className="font-medium">{event.company}</span></p>}
                   {event.details && <p className="text-sm text-muted-foreground truncate"><span>📝</span> {event.details}</p>}
                   <div className="flex items-center justify-between pt-1">
                     <Badge variant={event.invoice_id ? "default" : "outline"} className="text-xs">
@@ -483,6 +485,8 @@ const AdminEvents = () => {
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📆 Date</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📅 Day</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">👤 Client</th>
+                  <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">🏗️ Coordinator</th>
+                  <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">🏢 Company</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📍 Jagah</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📞 Phone</th>
                   <th className="px-4 py-4 text-left font-semibold text-muted-foreground whitespace-nowrap">📦 Items</th>
@@ -499,7 +503,9 @@ const AdminEvents = () => {
                     <td className="px-4 py-4 font-mono text-primary font-bold">#{event.index}</td>
                     <td className="px-4 py-4 whitespace-nowrap font-medium">{new Date(event.date).toLocaleDateString()}</td>
                     <td className="px-4 py-4 whitespace-nowrap">{getDayName(event.date)}</td>
-                    <td className="px-4 py-4">{getDisplayName(event)}</td>
+                    <td className="px-4 py-4 font-bold">{event.client_name || "—"}</td>
+                    <td className="px-4 py-4 text-sm">{event.coordinator_company || "—"}</td>
+                    <td className="px-4 py-4 text-sm">{event.company || "—"}</td>
                     <td className="px-4 py-4 font-medium">{event.event_place}</td>
                     <td className="px-4 py-4 whitespace-nowrap">{event.phone_no}</td>
                     <td className="px-4 py-4 max-w-[150px] truncate">{getItemsSummary(event)}</td>

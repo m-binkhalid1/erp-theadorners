@@ -34,7 +34,7 @@ serve(async (req) => {
     const { message, messageId } = await req.json();
     if (!message || !messageId) throw new Error("Missing message or messageId");
 
-    // Use tool calling to extract structured event data
+    // Use tool calling to extract structured event data OR staff ledger entry
     const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: {
@@ -46,30 +46,44 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are an event data extraction assistant for "The Adorners", a balloon decoration & event management company in Lahore, Pakistan.
+            content: `You are a smart assistant for "The Adorners", a balloon decoration & event management company in Lahore, Pakistan.
 
-Your job is to extract event details from employee chat messages. Employees describe events in casual Urdu/English (Roman Urdu).
+Your job is to analyze employee chat messages and determine if they describe:
+1. An EVENT booking/details, OR
+2. A STAFF PAYMENT/EXPENSE (employee ne paise liye, advance, salary, dihari, kharcha etc.), OR
+3. Neither (just a normal chat message)
 
-Extract these fields:
-- client_name: The CONTACT PERSON who is coordinating with us (e.g. "Anthony", "Ali", "Moen"). This is the person we deal with directly.
-- coordinator_company: The EVENT MANAGEMENT COMPANY that is organizing/coordinating the event (optional, e.g. "Ignite Events", "Event Masters")
-- event_of_company: The END CLIENT COMPANY whose event this is (optional, e.g. "Food Panda", "Jazz"). This is the company the event is FOR, not the company organizing it.
+## EVENT EXTRACTION
+Extract these fields for events:
+- client_name: The CONTACT PERSON who is coordinating with us (e.g. "Anthony", "Ali", "Moen")
+- coordinator_company: The EVENT MANAGEMENT COMPANY organizing it (optional, e.g. "Ignite Events")
+- event_of_company: The END CLIENT COMPANY whose event this is (optional, e.g. "Food Panda")
 - event_place: Where the event is happening
 - phone_no: Client phone number (Pakistani format)
 - date: Event date (ISO format YYYY-MM-DD)
-- items: Array of items needed for the event (e.g. balloons, danglers, flowers). Each item has: description (string), qty (number), unit_price (number)
+- items: Array of items needed. Each item: description (string), qty (number), unit_price (number)
 - employees: Which employees are going
 - details: Any other event details
 
 IMPORTANT DISTINCTION:
-- client_name = the PERSON we are in contact with (e.g. "Anthony")
-- coordinator_company = the EVENT COMPANY organizing it (e.g. "Ignite Events")
-- event_of_company = whose event it actually IS (e.g. "Food Panda")
+- client_name = the PERSON we are in contact with
+- coordinator_company = the EVENT COMPANY organizing it
+- event_of_company = whose event it actually IS
 
-For direct events (like birthdays), client_name is the person, no coordinator needed.
+## STAFF PAYMENT EXTRACTION
+If the message talks about giving money to an employee/worker, extract:
+- staff_name: Name of the worker/employee who received money
+- staff_amount: Amount in PKR
+- staff_reason: Why were they given money (advance, salary, daily wage, event expense, personal need, etc.)
+- staff_type: One of: "advance", "salary", "daily_wage", "expense", "event_expense", "other"
 
-If the message does NOT describe an event, return is_event: false.
-If it IS an event description, return is_event: true with as many fields as you can extract. Leave unknown fields as empty strings.
+Examples of staff payment messages:
+- "Ali ko 5000 diye advance" → staff payment
+- "Usman ki aaj ki dihari 2000 de do" → staff payment (daily_wage)
+- "Bilal ne event k kharche k liye 3000 liye" → staff payment (event_expense)
+- "Ahmed ki March salary 25000 di" → staff payment (salary)
+- "falan bande ne itne paise liye" → staff payment
+
 For dates: if they say "kal" or "tomorrow" assume the next day from today. "Aaj" means today.
 Today's date is: ${new Date().toISOString().split("T")[0]}`
           },
@@ -111,8 +125,26 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
               },
             },
           },
+          {
+            type: "function",
+            function: {
+              name: "extract_staff_payment",
+              description: "Extract staff/employee payment details from a chat message.",
+              parameters: {
+                type: "object",
+                properties: {
+                  is_staff_payment: { type: "boolean", description: "Whether this message describes a staff payment/expense" },
+                  staff_name: { type: "string", description: "Name of the worker/employee" },
+                  staff_amount: { type: "number", description: "Amount in PKR" },
+                  staff_reason: { type: "string", description: "Reason for the payment" },
+                  staff_type: { type: "string", enum: ["advance", "salary", "daily_wage", "expense", "event_expense", "other"], description: "Type of payment" },
+                },
+                required: ["is_staff_payment"],
+                additionalProperties: false,
+              },
+            },
+          },
         ],
-        tool_choice: { type: "function", function: { name: "extract_event" } },
       }),
     });
 
@@ -132,64 +164,105 @@ Today's date is: ${new Date().toISOString().split("T")[0]}`
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) throw new Error("No tool call response from AI");
 
+    const fnName = toolCall.function.name;
     const extracted = JSON.parse(toolCall.function.arguments);
-    console.log("Extracted:", extracted);
+    console.log("Extracted:", fnName, extracted);
 
-    if (!extracted.is_event) {
-      return new Response(JSON.stringify({ is_event: false }), {
+    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // ──────────────────────────────────────────
+    // STAFF PAYMENT PATH
+    // ──────────────────────────────────────────
+    if (fnName === "extract_staff_payment" && extracted.is_staff_payment) {
+      const { data: staffData, error: staffError } = await adminClient.from("staff_ledger").insert({
+        worker_name: (extracted.staff_name || "Unknown").trim(),
+        amount: extracted.staff_amount || 0,
+        transaction_type: extracted.staff_type || "other",
+        description: (extracted.staff_reason || "").trim(),
+        status: "pending_ai",
+        created_by: userId,
+      }).select("id").single();
+
+      if (staffError) {
+        console.error("Staff ledger creation error:", staffError);
+        throw new Error("Failed to create staff ledger entry");
+      }
+
+      // Mark chat message
+      await adminClient.from("chat_messages").update({
+        is_ai_processed: true,
+        ai_staff_ledger_id: staffData.id,
+      }).eq("id", messageId);
+
+      return new Response(JSON.stringify({
+        is_event: false,
+        is_staff_payment: true,
+        staff_ledger_id: staffData.id,
+        extracted,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Build event_items from extracted items
-    const eventItems = (extracted.items || []).map((i: any) => ({
-      description: i.description || "",
-      qty: i.qty || 0,
-      unit_price: i.unit_price || 0,
-      subtotal: (i.qty || 0) * (i.unit_price || 0),
-    }));
-    const totalAmount = eventItems.reduce((s: number, i: any) => s + i.subtotal, 0);
+    // ──────────────────────────────────────────
+    // EVENT PATH
+    // ──────────────────────────────────────────
+    if (fnName === "extract_event" && extracted.is_event) {
+      // Build event_items from extracted items
+      const eventItems = (extracted.items || []).map((i: any) => ({
+        description: i.description || "",
+        qty: i.qty || 0,
+        unit_price: i.unit_price || 0,
+        subtotal: (i.qty || 0) * (i.unit_price || 0),
+      }));
+      const totalAmount = eventItems.reduce((s: number, i: any) => s + i.subtotal, 0);
 
-    // Create event using service role
-    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const clientName = (extracted.client_name || "Unknown").trim();
+      const eventOfCompany = (extracted.event_of_company || "").trim();
 
-    const clientName = (extracted.client_name || "Unknown").trim();
-    const eventOfCompany = (extracted.event_of_company || "").trim();
+      const { data: eventData, error: eventError } = await adminClient.from("events").insert({
+        company: eventOfCompany,
+        client_name: clientName,
+        coordinator_company: (extracted.coordinator_company || "").trim(),
+        coordinator_name: "",
+        event_place: (extracted.event_place || "TBD").trim(),
+        phone_no: (extracted.phone_no || "").trim(),
+        date: extracted.date || new Date().toISOString().split("T")[0],
+        balloons: "",
+        event_items: eventItems,
+        total_amount: totalAmount,
+        employees: (extracted.employees || "").trim(),
+        details: (extracted.details || "").trim(),
+        created_by: userId,
+        status: "pending_ai",
+        ai_source: true,
+      }).select("id").single();
 
-    const { data: eventData, error: eventError } = await adminClient.from("events").insert({
-      company: eventOfCompany, // Event of Company (e.g. Food Panda)
-      client_name: clientName, // Contact person (e.g. Anthony)
-      coordinator_company: (extracted.coordinator_company || "").trim(),
-      coordinator_name: "", // deprecated from UI
-      event_place: (extracted.event_place || "TBD").trim(),
-      phone_no: (extracted.phone_no || "").trim(),
-      date: extracted.date || new Date().toISOString().split("T")[0],
-      balloons: "", // deprecated
-      event_items: eventItems,
-      total_amount: totalAmount,
-      employees: (extracted.employees || "").trim(),
-      details: (extracted.details || "").trim(),
-      created_by: userId,
-      status: "pending_ai",
-      ai_source: true,
-    }).select("id").single();
+      if (eventError) {
+        console.error("Event creation error:", eventError);
+        throw new Error("Failed to create event");
+      }
 
-    if (eventError) {
-      console.error("Event creation error:", eventError);
-      throw new Error("Failed to create event");
+      // Mark chat message as AI processed
+      await adminClient.from("chat_messages").update({
+        is_ai_processed: true,
+        ai_event_id: eventData.id,
+      }).eq("id", messageId);
+
+      return new Response(JSON.stringify({
+        is_event: true,
+        is_staff_payment: false,
+        event_id: eventData.id,
+        extracted,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Mark chat message as AI processed
-    await adminClient.from("chat_messages").update({
-      is_ai_processed: true,
-      ai_event_id: eventData.id,
-    }).eq("id", messageId);
-
-    return new Response(JSON.stringify({
-      is_event: true,
-      event_id: eventData.id,
-      extracted,
-    }), {
+    // ──────────────────────────────────────────
+    // NEITHER EVENT NOR STAFF PAYMENT
+    // ──────────────────────────────────────────
+    return new Response(JSON.stringify({ is_event: false, is_staff_payment: false }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 

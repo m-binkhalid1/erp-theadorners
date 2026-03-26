@@ -14,6 +14,7 @@ import AdminLedger from "./pages/admin/Ledger";
 import AdminChat from "./pages/admin/Chat";
 import AdminTasks from "./pages/admin/Tasks";
 import AdminEmployees from "./pages/admin/Employees";
+import AdminStaffLedger from "./pages/admin/StaffLedger";
 import EmployeeChat from "./pages/employee/Chat";
 import EmployeeTasks from "./pages/employee/Tasks";
 import EmployeeEvents from "./pages/employee/Events";
@@ -77,6 +78,7 @@ const App = () => (
               <Route path="chat" element={<AdminChat />} />
               <Route path="tasks" element={<AdminTasks />} />
               <Route path="employees" element={<AdminEmployees />} />
+              <Route path="staff-ledger" element={<AdminStaffLedger />} />
             </Route>
 
             <Route path="/employee" element={<ProtectedRoute allowedRole="employee"><EmployeeLayout /></ProtectedRoute>}>

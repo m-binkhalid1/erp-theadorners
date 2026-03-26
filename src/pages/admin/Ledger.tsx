@@ -47,6 +47,12 @@ interface InvoiceRow {
   status: string;
   invoice_no: string;
   created_at: string;
+  // Joined event fields
+  event_details?: string;
+  event_description?: string;
+  event_company?: string;
+  event_coordinator?: string;
+  event_client?: string;
 }
 
 interface CompanyLedger {
@@ -74,9 +80,35 @@ const AdminLedger = () => {
 
   const fetchAll = async () => {
     try {
-      const { data, error } = await supabase.from("invoices").select("*").order("created_at", { ascending: false });
-      if (error) { toast.error(error.message); return; }
-      setInvoices((data ?? []) as InvoiceRow[]);
+      // Fetch invoices
+      const { data: invData, error: invError } = await supabase.from("invoices").select("*").order("created_at", { ascending: false });
+      if (invError) { toast.error(invError.message); return; }
+
+      // For invoices with event_id, fetch event details
+      const invoicesWithEvents = (invData ?? []) as any[];
+      const eventIds = invoicesWithEvents.filter(i => i.event_id).map(i => i.event_id);
+      let eventsMap: Record<string, any> = {};
+      if (eventIds.length > 0) {
+        const { data: evtData } = await supabase.from("events").select("id, details, client_name, company, coordinator_company, event_items").in("id", eventIds);
+        if (evtData) {
+          evtData.forEach((evt: any) => { eventsMap[evt.id] = evt; });
+        }
+      }
+
+      // Merge event info into invoices
+      const enriched = invoicesWithEvents.map(inv => {
+        const evt = inv.event_id ? eventsMap[inv.event_id] : null;
+        return {
+          ...inv,
+          event_details: evt?.details || "",
+          event_description: evt?.event_items ? (Array.isArray(evt.event_items) ? evt.event_items.filter((i: any) => i.description).map((i: any) => i.description).join(", ") : "") : "",
+          event_company: evt?.company || "",
+          event_coordinator: evt?.coordinator_company || "",
+          event_client: evt?.client_name || "",
+        } as InvoiceRow;
+      });
+
+      setInvoices(enriched);
     } catch (err) {
       console.error("Ledger fetch error:", err);
       toast.error("Ledger load karte waqt error aa gaya");
@@ -267,17 +299,29 @@ const AdminLedger = () => {
 
   const formatRs = (n: number) => `Rs ${n.toLocaleString("en-PK")}`;
 
-  // Display name for an invoice row — shows ledger_label if set, else client_name
+  // Display name for an invoice row — shows ledger_label if set, else client_name, plus event info
   const getRowDisplayName = (inv: InvoiceRow) => {
-    if (inv.ledger_label) {
-      return (
-        <div>
-          <span className="font-medium">{inv.ledger_label}</span>
-          <span className="text-muted-foreground text-xs block">👤 {inv.client_name || inv.company}</span>
-        </div>
-      );
-    }
-    return <span className="font-medium">{inv.client_name || inv.company}</span>;
+    const mainLabel = inv.ledger_label || inv.client_name || inv.company;
+    const eventInfo = inv.event_id ? [
+      inv.event_description && `📦 ${inv.event_description}`,
+      inv.event_details && `📝 ${inv.event_details}`,
+      inv.event_company && `🏢 ${inv.event_company}`,
+      inv.event_coordinator && `🏗️ ${inv.event_coordinator}`,
+    ].filter(Boolean) : [];
+
+    return (
+      <div>
+        <span className="font-medium">{mainLabel}</span>
+        {inv.ledger_label && <span className="text-muted-foreground text-xs block">👤 {inv.client_name || inv.company}</span>}
+        {eventInfo.length > 0 && (
+          <div className="mt-0.5 space-y-0.5">
+            {eventInfo.map((info, idx) => (
+              <span key={idx} className="text-muted-foreground text-xs block">{info}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
