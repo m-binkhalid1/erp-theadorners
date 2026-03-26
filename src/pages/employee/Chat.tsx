@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Loader2, CalendarPlus, Trash2, CheckCircle2, Circle, X } from "lucide-react";
+import { Send, Loader2, CalendarPlus, Trash2, CheckCircle2, Circle, X, Wallet, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,8 @@ interface ChatMessage {
   message_type: string;
   is_ai_processed: boolean;
   ai_event_id: string | null;
+  ai_staff_ledger_id: string | null;
+  ai_invoice_id: string | null;
   file_url: string | null;
   file_type: string | null;
   file_name: string | null;
@@ -321,6 +323,22 @@ const EmployeeChat = () => {
                   <div className="flex items-center gap-1.5 mt-1.5">
                     <Badge variant="outline" className="gap-1 border-primary/30 text-primary text-xs">
                       <CalendarPlus className="h-3 w-3" /> Event ban gaya ✅
+                    </Badge>
+                  </div>
+                )}
+
+                {msg.is_ai_processed && msg.ai_staff_ledger_id && !isDeleted && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <Badge variant="outline" className="gap-1 border-amber-500/30 text-amber-600 text-xs">
+                      <Wallet className="h-3 w-3" /> Staff Payment 💰
+                    </Badge>
+                  </div>
+                )}
+
+                {msg.is_ai_processed && msg.ai_invoice_id && !isDeleted && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <Badge variant="outline" className="gap-1 border-green-500/30 text-green-600 text-xs">
+                      <Receipt className="h-3 w-3" /> Payment Received 🧾
                     </Badge>
                   </div>
                 )}

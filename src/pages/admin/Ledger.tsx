@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import {
   Search, Loader2, ChevronDown, ChevronRight,
-  AlertTriangle, Merge, CheckCircle2, Plus, Pencil, Trash2, Tag, Sparkles, Check, X
+  AlertTriangle, Merge, CheckCircle2, Plus, Pencil, Trash2, Tag, Sparkles, Check, X, Receipt
 } from "lucide-react";
 
 function levenshtein(a: string, b: string): number {
@@ -78,6 +78,10 @@ const AdminLedger = () => {
   const [editDialog, setEditDialog] = useState(false);
   const [editForm, setEditForm] = useState({ id: "", client_name: "", company: "", ledger_label: "", total: 0, paid: 0, status: "" });
 
+  // Receive Payment dialog
+  const [receiveDialog, setReceiveDialog] = useState(false);
+  const [receiveForm, setReceiveForm] = useState({ company: "", amount: 0, method: "cheque", description: "" });
+
   const fetchAll = async () => {
     try {
       // Fetch invoices
@@ -128,6 +132,7 @@ const AdminLedger = () => {
   }, []);
 
   // Group by company (coordinator company on invoice)
+  // IMPORTANT: Filter out pending_ai invoices from balance calculation
   const ledger = useMemo<CompanyLedger[]>(() => {
     const map = new Map<string, { displayName: string; invoices: InvoiceRow[] }>();
     invoices.forEach(inv => {
@@ -141,13 +146,17 @@ const AdminLedger = () => {
       }
     });
     return Array.from(map.values())
-      .map(({ displayName, invoices: invs }) => ({
-        company: displayName,
-        invoices: invs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-        totalAmount: invs.reduce((s, i) => s + i.total, 0),
-        paidAmount: invs.reduce((s, i) => s + i.paid, 0),
-        remaining: invs.reduce((s, i) => s + (i.total - i.paid), 0),
-      }))
+      .map(({ displayName, invoices: invs }) => {
+        // Only count approved invoices in the balance
+        const approved = invs.filter(i => i.status !== "pending_ai");
+        return {
+          company: displayName,
+          invoices: invs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+          totalAmount: approved.reduce((s, i) => s + i.total, 0),
+          paidAmount: approved.reduce((s, i) => s + i.paid, 0),
+          remaining: approved.reduce((s, i) => s + (i.total - i.paid), 0),
+        };
+      })
       .sort((a, b) => b.remaining - a.remaining);
   }, [invoices]);
 
@@ -316,6 +325,35 @@ const AdminLedger = () => {
     }
   };
 
+  // ── Receive Payment (Lump-sum cheque/cash) ──
+  const handleReceivePayment = async () => {
+    if (!receiveForm.company.trim()) { toast.error("Company name lazmi hai"); return; }
+    if (receiveForm.amount <= 0) { toast.error("Amount 0 se zyada hona chahiye"); return; }
+    try {
+      const desc = [
+        receiveForm.method ? `Via ${receiveForm.method}` : "",
+        receiveForm.description || "",
+      ].filter(Boolean).join(" — ");
+      const { error } = await supabase.from("invoices").insert({
+        company: receiveForm.company.trim(),
+        client_name: receiveForm.company.trim(),
+        ledger_label: `💰 Payment Received${desc ? ` — ${desc}` : ""}`,
+        total: 0,
+        paid: receiveForm.amount,
+        status: "paid",
+        items: [{ description: `Payment received: ${desc || "Cheque/Cash"}`, qty: 1, unit_price: 0, subtotal: 0 }],
+      });
+      if (error) { toast.error(`Error: ${error.message}`); return; }
+      toast.success(`Rs ${receiveForm.amount.toLocaleString()} receive ho gaye! ✅`);
+      setReceiveDialog(false);
+      setReceiveForm({ company: "", amount: 0, method: "cheque", description: "" });
+      fetchAll();
+    } catch (err) {
+      console.error("Receive payment exception:", err);
+      toast.error("Payment record karte waqt error aa gaya");
+    }
+  };
+
   const formatRs = (n: number) => `Rs ${n.toLocaleString("en-PK")}`;
 
   // Display name for an invoice row — shows ledger_label if set, else client_name, plus event info
@@ -352,9 +390,14 @@ const AdminLedger = () => {
           <h1 className="text-2xl sm:text-3xl font-display font-bold">📒 Ledger</h1>
           <p className="text-base text-muted-foreground mt-1">Company-wise payment tracking</p>
         </div>
-        <Button size="sm" className="rounded-xl font-semibold gap-1.5" onClick={() => setAddDialog(true)}>
-          <Plus className="h-4 w-4" /> Manual Entry
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="outline" className="rounded-xl font-semibold gap-1.5" onClick={() => setReceiveDialog(true)}>
+            <Receipt className="h-4 w-4" /> Receive Payment
+          </Button>
+          <Button size="sm" className="rounded-xl font-semibold gap-1.5" onClick={() => setAddDialog(true)}>
+            <Plus className="h-4 w-4" /> Manual Entry
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -614,6 +657,38 @@ const AdminLedger = () => {
               </div>
             )}
             <Button className="w-full h-12 rounded-xl font-semibold text-base" onClick={handleEditEntry}>Update Karein ✅</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* RECEIVE PAYMENT DIALOG */}
+      <Dialog open={receiveDialog} onOpenChange={o => { setReceiveDialog(o); if (!o) setReceiveForm({ company: "", amount: 0, method: "cheque", description: "" }); }}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader><DialogTitle className="text-xl">🧾 Payment Receive Karein</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">Company se cheque, cash ya transfer receive hua hai? Yahan record karein.</p>
+            <div className="space-y-2">
+              <Label className="font-semibold">Company Name *</Label>
+              <Input value={receiveForm.company} onChange={e => setReceiveForm(p => ({ ...p, company: e.target.value }))} placeholder="e.g. Cloud 9" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-semibold">Amount (Rs) *</Label>
+              <Input type="number" min={1} value={receiveForm.amount || ""} onChange={e => setReceiveForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))} className="h-11 rounded-xl text-lg" />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-semibold">Method</Label>
+              <select value={receiveForm.method} onChange={e => setReceiveForm(p => ({ ...p, method: e.target.value }))} className="w-full h-11 rounded-xl border border-border bg-card px-3 text-sm">
+                <option value="cheque">🧾 Cheque</option>
+                <option value="cash">💵 Cash</option>
+                <option value="bank_transfer">🏦 Bank Transfer</option>
+                <option value="other">📝 Other</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label className="font-semibold">Description <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+              <Input value={receiveForm.description} onChange={e => setReceiveForm(p => ({ ...p, description: e.target.value }))} placeholder="e.g. Cheque #12345" className="h-11 rounded-xl" />
+            </div>
+            <Button className="w-full h-12 rounded-xl font-semibold text-base" onClick={handleReceivePayment}>Payment Record Karein ✅</Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Loader2, Sparkles, CalendarPlus, ExternalLink, Trash2, CheckCircle2, Circle, X, Wallet, BookOpen, ChevronDown } from "lucide-react";
+import { Send, Loader2, Sparkles, CalendarPlus, ExternalLink, Trash2, CheckCircle2, Circle, X, Wallet, BookOpen, ChevronDown, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,7 @@ interface ChatMessage {
   is_ai_processed: boolean;
   ai_event_id: string | null;
   ai_staff_ledger_id: string | null;
+  ai_invoice_id: string | null;
   file_url: string | null;
   file_type: string | null;
   file_name: string | null;
@@ -359,6 +360,15 @@ const AdminChat = () => {
                   <button onClick={(e) => { e.stopPropagation(); navigate("/admin/staff-ledger"); }} className="flex items-center gap-1.5 mt-1.5 group">
                     <Badge variant="outline" className="gap-1 border-amber-500/30 text-amber-600 group-hover:bg-amber-500/10 transition-colors cursor-pointer text-xs">
                       <Wallet className="h-3 w-3" /> Staff Payment 💰
+                      <ExternalLink className="h-2.5 w-2.5" />
+                    </Badge>
+                  </button>
+                )}
+
+                {msg.is_ai_processed && msg.ai_invoice_id && !isDeleted && (
+                  <button onClick={(e) => { e.stopPropagation(); navigate("/admin/ledger"); }} className="flex items-center gap-1.5 mt-1.5 group">
+                    <Badge variant="outline" className="gap-1 border-green-500/30 text-green-600 group-hover:bg-green-500/10 transition-colors cursor-pointer text-xs">
+                      <Receipt className="h-3 w-3" /> Payment 💰
                       <ExternalLink className="h-2.5 w-2.5" />
                     </Badge>
                   </button>

@@ -268,7 +268,7 @@ Today's date is: ${new Date().toISOString().split("T")[0]}${systemExtra}`
 
       await adminClient.from("chat_messages").update({
         is_ai_processed: true,
-        ai_event_id: invData.id,
+        ai_invoice_id: invData.id,
       }).eq("id", messageId);
 
       return new Response(JSON.stringify({
