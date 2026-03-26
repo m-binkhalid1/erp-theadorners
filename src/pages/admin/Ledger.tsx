@@ -187,10 +187,14 @@ const AdminLedger = () => {
 
   const handleMerge = async (names: string[], keepName: string) => {
     for (const name of names.filter(n => n !== keepName)) {
+      // Update invoices
       const { error } = await supabase.from("invoices").update({ company: keepName }).ilike("company", name);
-      if (error) { toast.error(`Error merging "${name}": ${error.message}`); return; }
+      if (error) { toast.error(`Error merging invoices "${name}": ${error.message}`); return; }
+      // Also cascade to events table (company & coordinator_company)
+      await supabase.from("events").update({ company: keepName }).ilike("company", name);
+      await supabase.from("events").update({ coordinator_company: keepName }).ilike("coordinator_company", name);
     }
-    toast.success(`Sab invoices "${keepName}" mein merge ho gaye! ✅`);
+    toast.success(`Sab invoices + events "${keepName}" mein merge ho gaye! ✅`);
     fetchAll();
   };
 

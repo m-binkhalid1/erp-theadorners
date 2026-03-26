@@ -100,6 +100,42 @@ serve(async (req) => {
     const { message, messageId, expectedType } = await req.json();
     if (!message || !messageId) throw new Error("Missing message or messageId");
 
+    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // ── Fetch existing names for intelligent matching ──
+    let knownCompanies: string[] = [];
+    let knownStaff: string[] = [];
+    try {
+      const { data: compData } = await adminClient.from("invoices").select("company");
+      if (compData) {
+        const set = new Set<string>();
+        compData.forEach((r: any) => { if (r.company?.trim()) set.add(r.company.trim()); });
+        knownCompanies = Array.from(set);
+      }
+      const { data: staffData } = await adminClient.from("staff_ledger").select("worker_name");
+      if (staffData) {
+        const set = new Set<string>();
+        staffData.forEach((r: any) => { if (r.worker_name?.trim()) set.add(r.worker_name.trim()); });
+        knownStaff = Array.from(set);
+      }
+    } catch (e) {
+      console.error("Failed to fetch known names:", e);
+    }
+
+    const knownNamesBlock = `
+
+## KNOWN ENTITIES (VERY IMPORTANT)
+Below are the EXACT names already in our database. You MUST use these exact spellings if the message refers to any of them (even with typos, different casing, missing spaces, or slight variations).
+Only create a completely NEW name if it clearly does NOT match any of these.
+
+### Known Companies/Clients:
+${knownCompanies.length > 0 ? knownCompanies.map(n => `- "${n}"`).join("\n") : "(none yet)"}
+
+### Known Staff/Workers:
+${knownStaff.length > 0 ? knownStaff.map(n => `- "${n}"`).join("\n") : "(none yet)"}
+
+RULE: If the user writes "cloud9" and known company is "Cloud 9", return "Cloud 9". If user writes "ussman" and known staff is "Usman", return "Usman". Always prefer the EXACT known spelling.`;
+
     // ── Select tools based on expectedType ──
     let tools: any[];
     let systemExtra = "";
@@ -177,7 +213,7 @@ Examples:
 - "Anthony ne 20000 cash diye hain" → company payment
 
 For dates: if they say "kal" or "tomorrow" assume the next day from today. "Aaj" means today.
-Today's date is: ${new Date().toISOString().split("T")[0]}${systemExtra}`
+Today's date is: ${new Date().toISOString().split("T")[0]}${knownNamesBlock}${systemExtra}`
           },
           { role: "user", content: message }
         ],
@@ -205,7 +241,7 @@ Today's date is: ${new Date().toISOString().split("T")[0]}${systemExtra}`
     const extracted = JSON.parse(toolCall.function.arguments);
     console.log("Extracted:", fnName, extracted);
 
-    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    // adminClient already created above
 
     // ──────────────────────────────────────────
     // STAFF PAYMENT PATH
