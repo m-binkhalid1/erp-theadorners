@@ -73,14 +73,14 @@ const AdminLedger = () => {
   const [payAmount, setPayAmount] = useState(0);
 
   const [addDialog, setAddDialog] = useState(false);
-  const [addForm, setAddForm] = useState({ client_name: "", company: "", ledger_label: "", total: 0, paid: 0, description: "" });
+  const [addForm, setAddForm] = useState({ client_name: "", company: "", ledger_label: "", total: 0, paid: 0, description: "", date: new Date().toISOString().split("T")[0] });
 
   const [editDialog, setEditDialog] = useState(false);
-  const [editForm, setEditForm] = useState({ id: "", client_name: "", company: "", ledger_label: "", total: 0, paid: 0, status: "" });
+  const [editForm, setEditForm] = useState({ id: "", client_name: "", company: "", ledger_label: "", total: 0, paid: 0, status: "", date: new Date().toISOString().split("T")[0] });
 
   // Receive Payment dialog
   const [receiveDialog, setReceiveDialog] = useState(false);
-  const [receiveForm, setReceiveForm] = useState({ company: "", amount: 0, method: "cheque", description: "" });
+  const [receiveForm, setReceiveForm] = useState({ company: "", amount: 0, method: "cheque", description: "", date: new Date().toISOString().split("T")[0] });
 
   const fetchAll = async () => {
     try {
@@ -254,6 +254,9 @@ const AdminLedger = () => {
     if (addForm.total <= 0) { toast.error("Total amount 0 se zyada hona chahiye"); return; }
     try {
       const status = addForm.paid >= addForm.total ? "paid" : addForm.paid > 0 ? "partial" : "pending";
+      const [y, m, d] = addForm.date.split("-");
+      const overrideDate = new Date(Date.UTC(+y, +m - 1, +d, 12, 0, 0)).toISOString();
+
       const { error } = await supabase.from("invoices").insert({
         client_name: addForm.client_name.trim(),
         company: addForm.company.trim() || addForm.client_name.trim(),
@@ -261,12 +264,13 @@ const AdminLedger = () => {
         total: addForm.total,
         paid: addForm.paid,
         status,
+        created_at: overrideDate,
         items: addForm.description ? [{ description: addForm.description, qty: 1, unit_price: addForm.total, subtotal: addForm.total }] : [],
       });
       if (error) { toast.error(`Add error: ${error.message}`); return; }
       toast.success("Ledger entry add ho gayi! ✅");
       setAddDialog(false);
-      setAddForm({ client_name: "", company: "", ledger_label: "", total: 0, paid: 0, description: "" });
+      setAddForm({ client_name: "", company: "", ledger_label: "", total: 0, paid: 0, description: "", date: new Date().toISOString().split("T")[0] });
       fetchAll();
     } catch (err) {
       console.error("Add entry exception:", err);
@@ -283,6 +287,7 @@ const AdminLedger = () => {
       total: inv.total,
       paid: inv.paid,
       status: inv.status,
+      date: inv.created_at ? new Date(inv.created_at).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
     });
     setEditDialog(true);
   };
@@ -294,6 +299,9 @@ const AdminLedger = () => {
     if (editForm.paid > editForm.total) { toast.error("Paid amount total se zyada nahi ho sakta"); return; }
     try {
       const status = editForm.paid >= editForm.total ? "paid" : editForm.paid > 0 ? "partial" : "pending";
+      const [y, m, d] = editForm.date.split("-");
+      const overrideDate = new Date(Date.UTC(+y, +m - 1, +d, 12, 0, 0)).toISOString();
+
       const { error } = await supabase.from("invoices").update({
         client_name: editForm.client_name.trim(),
         company: editForm.company.trim() || editForm.client_name.trim(),
@@ -301,6 +309,7 @@ const AdminLedger = () => {
         total: editForm.total,
         paid: editForm.paid,
         status,
+        created_at: overrideDate,
       }).eq("id", editForm.id);
       if (error) { toast.error(`Update error: ${error.message}`); return; }
       toast.success("Entry update ho gayi! ✅");
@@ -338,6 +347,9 @@ const AdminLedger = () => {
         receiveForm.method ? `Via ${receiveForm.method}` : "",
         receiveForm.description || "",
       ].filter(Boolean).join(" — ");
+      const [y, m, d] = receiveForm.date.split("-");
+      const overrideDate = new Date(Date.UTC(+y, +m - 1, +d, 12, 0, 0)).toISOString();
+
       const { error } = await supabase.from("invoices").insert({
         company: receiveForm.company.trim(),
         client_name: receiveForm.company.trim(),
@@ -345,12 +357,13 @@ const AdminLedger = () => {
         total: 0,
         paid: receiveForm.amount,
         status: "paid",
+        created_at: overrideDate,
         items: [{ description: `Payment received: ${desc || "Cheque/Cash"}`, qty: 1, unit_price: 0, subtotal: 0 }],
       });
       if (error) { toast.error(`Error: ${error.message}`); return; }
       toast.success(`Rs ${receiveForm.amount.toLocaleString()} receive ho gaye! ✅`);
       setReceiveDialog(false);
-      setReceiveForm({ company: "", amount: 0, method: "cheque", description: "" });
+      setReceiveForm({ company: "", amount: 0, method: "cheque", description: "", date: new Date().toISOString().split("T")[0] });
       fetchAll();
     } catch (err) {
       console.error("Receive payment exception:", err);
@@ -605,14 +618,20 @@ const AdminLedger = () => {
       </Dialog>
 
       {/* MANUAL ADD DIALOG */}
-      <Dialog open={addDialog} onOpenChange={o => { setAddDialog(o); if (!o) setAddForm({ client_name: "", company: "", ledger_label: "", total: 0, paid: 0, description: "" }); }}>
+      <Dialog open={addDialog} onOpenChange={o => { setAddDialog(o); if (!o) setAddForm({ client_name: "", company: "", ledger_label: "", total: 0, paid: 0, description: "", date: new Date().toISOString().split("T")[0] }); }}>
         <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader><DialogTitle className="text-xl">➕ Manual Ledger Entry</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">Invoice sync mein masla ho ya koi entry manually add karni ho.</p>
-            <div className="space-y-2">
-              <Label className="font-semibold">Client Name *</Label>
-              <Input value={addForm.client_name} onChange={e => setAddForm(p => ({ ...p, client_name: e.target.value }))} placeholder="e.g. Anthony" className="h-11 rounded-xl" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="font-semibold">Client Name *</Label>
+                <Input value={addForm.client_name} onChange={e => setAddForm(p => ({ ...p, client_name: e.target.value }))} placeholder="e.g. Anthony" className="h-11 rounded-xl" />
+              </div>
+              <div className="space-y-2">
+                <Label className="font-semibold">Date</Label>
+                <Input type="date" value={addForm.date} onChange={e => setAddForm(p => ({ ...p, date: e.target.value }))} className="h-11 rounded-xl" />
+              </div>
             </div>
             <div className="space-y-2">
               <Label className="font-semibold">Company / Coordinator</Label>
@@ -644,7 +663,10 @@ const AdminLedger = () => {
           <DialogHeader><DialogTitle className="text-xl">✏️ Entry Update Karein</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">Invoice ID: <span className="font-mono font-semibold">I/TA/{editForm.id.slice(0, 8).toUpperCase()}</span></p>
-            <div className="space-y-2"><Label className="font-semibold">Client Name *</Label><Input value={editForm.client_name} onChange={e => setEditForm(p => ({ ...p, client_name: e.target.value }))} className="h-11 rounded-xl" /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2"><Label className="font-semibold">Client Name *</Label><Input value={editForm.client_name} onChange={e => setEditForm(p => ({ ...p, client_name: e.target.value }))} className="h-11 rounded-xl" /></div>
+              <div className="space-y-2"><Label className="font-semibold">Date</Label><Input type="date" value={editForm.date} onChange={e => setEditForm(p => ({ ...p, date: e.target.value }))} className="h-11 rounded-xl" /></div>
+            </div>
             <div className="space-y-2"><Label className="font-semibold">Company / Coordinator</Label><Input value={editForm.company} onChange={e => setEditForm(p => ({ ...p, company: e.target.value }))} className="h-11 rounded-xl" /></div>
             <div className="space-y-2">
               <Label className="font-semibold flex items-center gap-1.5"><Tag className="h-3.5 w-3.5" /> Ledger Label <span className="text-muted-foreground text-xs font-normal">(yaad dehani)</span></Label>
@@ -666,14 +688,20 @@ const AdminLedger = () => {
       </Dialog>
 
       {/* RECEIVE PAYMENT DIALOG */}
-      <Dialog open={receiveDialog} onOpenChange={o => { setReceiveDialog(o); if (!o) setReceiveForm({ company: "", amount: 0, method: "cheque", description: "" }); }}>
+      <Dialog open={receiveDialog} onOpenChange={o => { setReceiveDialog(o); if (!o) setReceiveForm({ company: "", amount: 0, method: "cheque", description: "", date: new Date().toISOString().split("T")[0] }); }}>
         <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader><DialogTitle className="text-xl">🧾 Payment Receive Karein</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">Company se cheque, cash ya transfer receive hua hai? Yahan record karein.</p>
-            <div className="space-y-2">
-              <Label className="font-semibold">Company Name *</Label>
-              <Input value={receiveForm.company} onChange={e => setReceiveForm(p => ({ ...p, company: e.target.value }))} placeholder="e.g. Cloud 9" className="h-11 rounded-xl" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="font-semibold">Company Name *</Label>
+                <Input value={receiveForm.company} onChange={e => setReceiveForm(p => ({ ...p, company: e.target.value }))} placeholder="e.g. Cloud 9" className="h-11 rounded-xl" />
+              </div>
+              <div className="space-y-2">
+                <Label className="font-semibold">Date</Label>
+                <Input type="date" value={receiveForm.date} onChange={e => setReceiveForm(p => ({ ...p, date: e.target.value }))} className="h-11 rounded-xl" />
+              </div>
             </div>
             <div className="space-y-2">
               <Label className="font-semibold">Amount (Rs) *</Label>

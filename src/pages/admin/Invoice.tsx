@@ -161,6 +161,7 @@ const AdminInvoice = () => {
       for_label: forLabel,
       event_detail: eventDetail.trim(),
       items: invoiceItems,
+      invoice_date: ev.date ? ev.date.split("T")[0] : prev.invoice_date,
     }));
   };
 
@@ -200,6 +201,9 @@ const AdminInvoice = () => {
   const handleSave = async () => {
     if (!form.client_name.trim() && !form.company.trim()) { toast.error("Client Name ya Company lazmi hai"); return; }
 
+    const [y, m, d] = form.invoice_date.split("-");
+    const overrideDate = new Date(Date.UTC(+y, +m - 1, +d, 12, 0, 0)).toISOString();
+
     const payload = {
       company: (form.company || form.client_name).trim(),
       client_name: form.client_name.trim(),
@@ -208,6 +212,7 @@ const AdminInvoice = () => {
       total,
       ledger_label: form.ledger_label.trim(),
       status: "pending" as string,
+      created_at: overrideDate,
     };
 
     if (editingId) {
